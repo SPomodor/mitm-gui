@@ -5,7 +5,7 @@ import pytest
 from mitmproxy.test import tflow
 from mitmproxy import http
 
-from backend.mocks import MockError, MockModule, compile_scenario
+from backend.mocks import MockError, MockModule, compile_scenario, validate_scope
 
 
 SOURCE = '''модуль "Заказ"
@@ -72,6 +72,30 @@ def test_fixture_snapshot_persistence_and_invalid_revision(tmp_path):
     reloaded = MockModule(tmp_path)
     assert not reloaded.enabled and reloaded.scenario and reloaded.stage == 'Собирается'
     assert reloaded.hosts == ['api.test']
+
+
+def test_all_hosts_preserves_path_scope_and_persists(tmp_path):
+    module = install(tmp_path)
+    data = dict(source=SOURCE, folder=str(tmp_path), hosts=validate_scope(['*'], '/driver/'), scope='/driver/', strict=True)
+    module.install(module.scenario, data)
+    module.enabled = True
+    for host in ('one.test', 'two.test', '127.0.0.1'):
+        flow = make_flow(host=host)
+        assert module.handle(flow)
+        assert json.loads(flow.response.content)['status'] == 'assembling'
+        missing = make_flow('/driver/missing', host=host)
+        assert module.handle(missing) and missing.response.status_code == 501
+        assert not module.handle(make_flow('/outside', host=host))
+    module.strict = False
+    assert not module.handle(make_flow('/driver/missing', host='three.test'))
+    restored = MockModule(tmp_path)
+    assert restored.hosts == ['*'] and not restored.enabled and not restored.load_error
+
+
+@pytest.mark.parametrize('hosts', [[], [' '], ['*', 'api.test']])
+def test_empty_and_ambiguous_hosts_are_clear_errors(hosts):
+    with pytest.raises(MockError, match='домены|доменов|домен'):
+        validate_scope(hosts, '/driver/')
 
 
 @pytest.mark.parametrize('bad', [

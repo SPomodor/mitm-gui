@@ -291,11 +291,24 @@ export default function Mocks({
             </div>
           </div>
           <div className="mock-settings">
+            <label className="checkbox-label mock-all-hosts">
+              <input
+                type="checkbox"
+                checked={hostText.trim() === "*"}
+                disabled={busy}
+                onChange={(e) => setHostText(e.target.checked ? "*" : "")}
+              />
+              Все домены
+              <span className="muted">
+                Ответы по путям сценария на любом домене
+              </span>
+            </label>
             <label>
               Домены через запятую
               <input
                 aria-label="Домены мок-модуля"
                 placeholder="api.example.com"
+                disabled={hostText.trim() === "*"}
                 value={hostText}
                 onChange={(e) => setHostText(e.target.value)}
               />

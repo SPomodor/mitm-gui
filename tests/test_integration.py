@@ -333,6 +333,9 @@ def test_mock_module_real_http_tls_stage_priority_and_failed_apply(environment):
     try:
         assert client.post('/capture/start', json={'port': port, 'lan': False}).status_code == 200
         assert client.get('/mocks').json()['enabled'] is False
+        missing_hosts = client.post('/mocks/validate', json={**document, 'hosts': []})
+        assert missing_hosts.status_code == 422
+        assert 'Все домены' in missing_hosts.json()['detail']
         assert client.post('/mocks/validate', json=document).status_code == 200
         assert client.get('/mocks').json()['stages'] == []
         assert client.put('/mocks', json=document).status_code == 200
@@ -363,6 +366,11 @@ def test_mock_module_real_http_tls_stage_priority_and_failed_apply(environment):
             assert client.post('/mocks/control', json={'action': 'reset'}).json()['stage'] == 'Собирается'
             assert client.post('/mocks/control', json={'action': 'disable'}).status_code == 200
             assert proxy.get(upstream + '/driver/order/info').status_code == 418
+            assert client.put('/mocks', json={**document, 'hosts': ['*']}).status_code == 200
+            assert client.post('/mocks/control', json={'action': 'enable'}).status_code == 200
+            assert proxy.get('http://new-domain.invalid/driver/order/info').json()['status'] == 'assembling'
+            assert proxy.get('http://other-domain.invalid/driver/order/info').json()['status'] == 'assembling'
+            assert proxy.get('http://new-domain.invalid/driver/unknown').status_code == 501
     finally:
         client.post('/mocks/control', json={'action': 'disable'})
         client.put('/rules', json=previous)

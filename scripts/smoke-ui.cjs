@@ -191,14 +191,14 @@ async function unusedPort() {
     });
     await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
     const originPort = upstream.address().port;
-    async function fetchProxy(url) {
+    async function fetchProxy(url, host = `api.example.test:${originPort}`) {
       return new Promise((resolve, reject) => {
         const req = http.request(
           {
             hostname: "127.0.0.1",
             port: proxyPort,
             path: url,
-            headers: { Host: `api.example.test:${originPort}` },
+            headers: { Host: host },
           },
           (res) => {
             let text = "";
@@ -478,6 +478,8 @@ async function unusedPort() {
       throw new Error("Bundled order template is missing");
     await page.getByRole("button", { name: "Демо", exact: true }).click();
     await page.getByLabel("Домены мок-модуля").fill("api.example.test");
+    await page.getByRole("checkbox", { name: /^Все домены/ }).check();
+    await expect(page.getByLabel("Домены мок-модуля")).toBeDisabled();
     await page.getByRole("button", { name: "Проверить", exact: true }).click();
     await expect(page.getByRole("status")).toContainText("Проверено: 7 этапов");
     await page
@@ -489,6 +491,11 @@ async function unusedPort() {
     const mockUrl = `http://127.0.0.1:${originPort}/driver/demo/order`;
     if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "assembling")
       throw new Error("Demo mock did not intercept request");
+    if (
+      JSON.parse((await fetchProxy(mockUrl, "another.example.test")).text)
+        .status !== "assembling"
+    )
+      throw new Error("All-host mock did not match a second domain");
     await page.getByRole("button", { name: "Завершён", exact: true }).click();
     if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "completed")
       throw new Error("Mock stage did not switch");
@@ -590,6 +597,7 @@ async function unusedPort() {
           ...(!portable ? ["export HAR through native save dialog"] : []),
           "stop",
           "mock DSL validation and demo",
+          "all-host mock toggle with two domains",
           "manual mock stages and reset",
           "strict unmatched request blocking",
           "invalid mock keeps active revision",

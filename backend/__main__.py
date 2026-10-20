@@ -295,7 +295,7 @@ async def rules():
 class MockDocument(BaseModel):
     source: str = Field(max_length=200_000)
     folder: str = Field(default='', max_length=4096)
-    hosts: list[str] = Field(min_length=1, max_length=20)
+    hosts: list[str] = Field(max_length=20)
     scope: str = Field(default='/driver/', max_length=1024)
     strict: bool = True
 

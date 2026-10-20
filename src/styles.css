@@ -1855,6 +1855,13 @@ button .spin {
   min-width: 0;
   font-size: 12px;
 }
+.mock-all-hosts {
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+}
+.mock-all-hosts > span {
+  font-size: 12px;
+}
 .mock-scope {
   grid-column: 1 / -1;
   display: grid;

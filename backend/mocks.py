@@ -140,7 +140,11 @@ def compile_scenario(source: str, folder: str) -> Scenario:
 
 def validate_scope(hosts, scope):
     hosts = [host.strip().lower().rstrip('.') for host in hosts if host.strip()]
-    if not hosts or len(hosts) > 20 or any(not re.fullmatch(r'[a-z0-9][a-z0-9.\-]*', host) for host in hosts):
+    if not hosts:
+        raise MockError('Укажите хотя бы один домен или включите «Все домены»')
+    if '*' in hosts and hosts != ['*']:
+        raise MockError('«Все домены» нельзя объединять со списком доменов')
+    if hosts != ['*'] and (len(hosts) > 20 or any(not re.fullmatch(r'[a-z0-9][a-z0-9.\-]*', host) for host in hosts)):
         raise MockError('Укажите 1–20 точных доменов или IPv4 без протокола и порта')
     if not scope.startswith('/') or '?' in scope or '#' in scope:
         raise MockError('Префикс API должен начинаться с / и не содержать ? или #')
@@ -191,7 +195,7 @@ class MockModule:
         self.load_error = ''
 
     def handle(self, flow):
-        if not self.enabled or not self.scenario or flow_host(flow).lower().rstrip('.') not in self.hosts:
+        if not self.enabled or not self.scenario or ('*' not in self.hosts and flow_host(flow).lower().rstrip('.') not in self.hosts):
             return False
         path = urlsplit(flow.request.path).path
         reply = None
