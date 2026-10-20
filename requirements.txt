@@ -1,0 +1,5 @@
+mitmproxy==12.2.3
+fastapi==0.143.2
+uvicorn==0.54.0
+httpx==0.28.1
+pytest==9.1.1
