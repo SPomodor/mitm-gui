@@ -1762,6 +1762,217 @@ button .spin {
     height: 160px;
   }
 }
+.mock-page-container {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.mock-active-label {
+  color: var(--accent);
+}
+.mocks-page {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+}
+.mocks-page .page-heading {
+  padding: 16px 20px 12px;
+}
+.mock-stages {
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--line);
+}
+.mock-state {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+.mock-stage-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.mock-stage-buttons .selected {
+  color: var(--accent);
+  background: var(--selected);
+  border-color: var(--accent);
+}
+.mock-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  flex: 1;
+  min-height: 0;
+}
+.mock-editor-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.mock-editor-toolbar {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.mock-editor-toolbar > div,
+.mock-editor-toolbar strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mock-editor-toolbar .button {
+  font-size: 12px;
+  padding: 4px 7px;
+}
+.mock-settings {
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.mock-settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 0;
+}
+.mock-settings input {
+  width: 100%;
+  min-width: 0;
+  font-size: 12px;
+}
+.mock-scope {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+.mock-code {
+  flex: 1;
+  min-height: 60px;
+  width: 100%;
+  resize: none;
+  border: 0;
+  border-radius: 0;
+  padding: 14px;
+  background: var(--input);
+  font:
+    12px/1.7 Consolas,
+    monospace;
+  white-space: pre;
+  tab-size: 2;
+}
+.mock-code:focus-visible {
+  outline-offset: -2px;
+}
+.mock-notice {
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--accent);
+  border-top: 1px solid var(--line);
+  max-height: 70px;
+  overflow: auto;
+  flex-shrink: 0;
+}
+.mock-editor-pane > .inline-error {
+  max-height: 80px;
+  overflow: auto;
+  flex-shrink: 0;
+}
+.mock-apply {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.mock-apply > span {
+  width: 100%;
+  font-size: 12px;
+}
+.mock-log-pane {
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--panel);
+}
+.mock-log-list {
+  flex: 1;
+  overflow: auto;
+  min-height: 90px;
+}
+.mock-log-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.mock-log-entry > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mock-log-entry time,
+.mock-log-entry small,
+.mock-log-entry > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.mock-log-entry.blocked strong {
+  color: var(--danger);
+}
+.mock-help {
+  padding: 14px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+details.mock-help {
+  border-top: 1px solid var(--line);
+  max-height: 250px;
+  overflow: auto;
+}
+.mock-help summary {
+  cursor: pointer;
+  color: var(--text);
+}
+.mock-help pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 10px 0;
+}
+@media (max-width: 1180px) {
+  .mock-workspace {
+    grid-template-columns: minmax(0, 1fr) 230px;
+  }
+  .mocks-page .page-heading {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

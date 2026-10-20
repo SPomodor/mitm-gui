@@ -44,6 +44,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { QRCodeSVG } from "qrcode.react";
 import { api, newRule, useApp } from "./store";
 import RewriteFields, { editableRule, requestActions } from "./RewriteFields";
+import Mocks from "./Mocks";
 import packageInfo from "../package.json";
 import type {
   Config,
@@ -208,8 +209,9 @@ export default function App() {
     sessions,
     session,
   } = useApp();
-  const [page, setPage] = useState<"traffic" | "rules">("traffic");
+  const [page, setPage] = useState<"traffic" | "rules" | "mocks">("traffic");
   const [renaming, setRenaming] = useState<Session | null>(null);
+  const [mockEnabled, setMockEnabled] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null);
   const closeRename = useMemo(() => () => setRenaming(null), []);
   async function exportSession(item: Session) {
@@ -361,6 +363,13 @@ export default function App() {
             <SlidersHorizontal size={17} />
             Правила<span className="count">{rules.length}</span>
           </button>
+          <button
+            className={page === "mocks" ? "nav-item active" : "nav-item"}
+            onClick={() => setPage("mocks")}
+          >
+            <FileJson size={17} />
+            Моки{mockEnabled && <span className="tag">ON</span>}
+          </button>
           <button className="nav-item" onClick={() => setConnect(true)}>
             <Smartphone size={17} />
             Подключить устройство
@@ -472,7 +481,13 @@ export default function App() {
           <div className="breadcrumbs">
             <span>Workspace</span>
             <ChevronRight size={13} />
-            <strong>{page === "traffic" ? "Трафик" : "Правила"}</strong>
+            <strong>
+              {page === "traffic"
+                ? "Трафик"
+                : page === "rules"
+                  ? "Правила"
+                  : "Моки"}
+            </strong>
           </div>
           <div className="toolbar-actions">
             <button className="button subtle" onClick={() => setConnect(true)}>
@@ -582,9 +597,15 @@ export default function App() {
               onConnect={() => setConnect(true)}
             />
           </>
-        ) : (
+        ) : page === "rules" ? (
           <Rules onEdit={openEditor} />
-        )}
+        ) : null}
+        <div
+          className="mock-page-container"
+          style={{ display: page === "mocks" ? "flex" : "none" }}
+        >
+          <Mocks onEnabledChange={setMockEnabled} />
+        </div>
         <footer className="statusbar">
           <div>
             <span className={`status-dot ${status?.running ? "live" : ""}`} />
@@ -607,6 +628,9 @@ export default function App() {
           </div>
           <div>
             {activeRules} правил активно
+            {mockEnabled && (
+              <span className="mock-active-label"> · Мок активен</span>
+            )}
             <span className="footer-divider" />
             Local workspace
             <ShieldBan size={12} />
@@ -1082,7 +1106,7 @@ function Inspector({
                   {r.error ||
                     (r.matched === false
                       ? "Совпадений в содержимом нет"
-                      : `${kindLabel[r.kind as Rule["kind"]]} · Применено${r.matches !== undefined ? ` · Совпадений: ${r.matches}` : ""}`)}
+                      : `${kindLabel[r.kind as Rule["kind"]] || "Мок"} · Применено${r.matches !== undefined ? ` · Совпадений: ${r.matches}` : ""}`)}
                 </p>
               </div>
             ))

@@ -4,6 +4,7 @@ const path = require("node:path");
 const fs = require("node:fs/promises");
 const http = require("node:http");
 const net = require("node:net");
+const dgram = require("node:dgram");
 const { version } = require("../package.json");
 
 async function unusedPort() {
@@ -19,7 +20,13 @@ async function unusedPort() {
   await fs.mkdir(output, { recursive: true });
   const errors = [];
   const proxyPort = await unusedPort();
-  const wireguardPort = await unusedPort();
+  const udp = dgram.createSocket("udp4");
+  await new Promise((resolve, reject) => {
+    udp.once("error", reject);
+    udp.bind(0, "127.0.0.1", resolve);
+  });
+  const wireguardPort = udp.address().port;
+  await new Promise((resolve) => udp.close(resolve));
   const buildDirectory = process.env.CHLS_SMOKE_BUILD_DIR || "release";
   const portable = process.argv.includes("--portable");
   const packaged = portable || process.argv.includes("--packaged");
@@ -431,7 +438,7 @@ async function unusedPort() {
       "Phone debugging",
     );
     if (!portable) {
-      const exportPath = path.join(output, "session.har");
+      const exportPath = path.join(output, `session-${Date.now()}.har`);
       await application.evaluate(({ dialog }, filePath) => {
         dialog.showSaveDialog = async () => ({ canceled: false, filePath });
       }, exportPath);
@@ -459,6 +466,81 @@ async function unusedPort() {
       animations: "disabled",
       path: path.join(output, "07-sessions.png"),
     });
+    await page
+      .getByRole("navigation")
+      .getByRole("button", { name: /^Моки/ })
+      .click();
+    if (
+      !(await page.evaluate(() => window.chls.mockOrderTemplate())).includes(
+        "6_complete_exchange_init.json",
+      )
+    )
+      throw new Error("Bundled order template is missing");
+    await page.getByRole("button", { name: "Демо", exact: true }).click();
+    await page.getByLabel("Домены мок-модуля").fill("api.example.test");
+    await page.getByRole("button", { name: "Проверить", exact: true }).click();
+    await expect(page.getByRole("status")).toContainText("Проверено: 7 этапов");
+    await page
+      .getByRole("button", { name: "Применить сценарий", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Включить мок", exact: true })
+      .click();
+    const mockUrl = `http://127.0.0.1:${originPort}/driver/demo/order`;
+    if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "assembling")
+      throw new Error("Demo mock did not intercept request");
+    await page.getByRole("button", { name: "Завершён", exact: true }).click();
+    if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "completed")
+      throw new Error("Mock stage did not switch");
+    await expect(page.locator(".mock-log-list")).toContainText(
+      "/driver/demo/order",
+    );
+    if ((await fetchProxy(mockUrl + "/unhandled")).status !== 501)
+      throw new Error("Strict mock scope did not block unmatched request");
+    const originalSource = await page.getByLabel("Код сценария").inputValue();
+    await page
+      .getByLabel("Код сценария")
+      .fill(originalSource + "\nневерная команда");
+    await page
+      .getByRole("button", { name: "Применить сценарий", exact: true })
+      .click();
+    await expect(page.locator(".mocks-page").getByRole("alert")).toContainText(
+      "Строка",
+    );
+    if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "completed")
+      throw new Error("Failed apply replaced working mock");
+    await page.getByLabel("Код сценария").fill(originalSource);
+    await page
+      .getByRole("button", { name: "Сбросить этап", exact: true })
+      .click();
+    if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "assembling")
+      throw new Error("Mock reset failed");
+    await page.screenshot({
+      animations: "disabled",
+      path: path.join(output, "09-mock-module.png"),
+    });
+    await expect(
+      page.getByRole("button", { name: "Применить сценарий", exact: true }),
+    ).toBeInViewport({ ratio: 1 });
+    await page
+      .getByRole("navigation")
+      .getByRole("button", { name: /^Трафик/ })
+      .click();
+    await expect(page.getByText("Мок активен", { exact: false })).toBeVisible();
+    await page
+      .getByRole("navigation")
+      .getByRole("button", { name: /^Моки/ })
+      .click();
+    await expect(page.getByLabel("Код сценария")).toHaveValue(originalSource);
+    await page
+      .getByRole("button", { name: "Выключить мок", exact: true })
+      .click();
+    if (JSON.parse((await fetchProxy(mockUrl)).text).app !== "CHLS")
+      throw new Error("Normal proxy did not resume after disabling mock");
+    await page
+      .getByRole("navigation")
+      .getByRole("button", { name: /^Правила/ })
+      .click();
     await page.getByRole("button", { name: "Остановить", exact: true }).click();
     await expect(
       page.getByRole("button", { name: "Начать захват", exact: true }),
@@ -507,6 +589,11 @@ async function unusedPort() {
           "rename session",
           ...(!portable ? ["export HAR through native save dialog"] : []),
           "stop",
+          "mock DSL validation and demo",
+          "manual mock stages and reset",
+          "strict unmatched request blocking",
+          "invalid mock keeps active revision",
+          "disabled mock restores normal proxy",
           ...(!portable
             ? ["closing main window also closes editor and exits app"]
             : []),

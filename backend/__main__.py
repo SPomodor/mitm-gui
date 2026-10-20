@@ -22,6 +22,7 @@ from .rules import Rule, apply_rules
 from .store import Store
 from .har import export_har
 from .hosts import display_url, flow_host
+from .mocks import MockModule, MockError, compile_scenario, validate_scope
 
 MAX_BODY = 8 * 1024 * 1024
 MAX_PREVIEW = 256 * 1024
@@ -44,6 +45,7 @@ class Engine:
     def __init__(self):
         self.store = Store(ROOT)
         self.rules = []
+        self.mocks = MockModule(ROOT)
         self.config = CaptureConfig(wireguard=True)
         self.clients = set()
         self.pending = {}
@@ -145,12 +147,16 @@ class CaptureAddon:
         flow.metadata['original_request'] = snapshot(self.engine, flow, flow.request, 'original_request')
         # Each flow uses an immutable rule revision for request and response.
         flow.metadata['rule_revision'] = list(self.engine.rules)
-        apply_rules(flow, flow.metadata['rule_revision'], 'request', MAX_BODY)
+        if self.engine.mocks.handle(flow):
+            self.engine.publish({'type': 'mocks'})
+        else:
+            apply_rules(flow, flow.metadata['rule_revision'], 'request', MAX_BODY)
         self.record(flow)
 
     def response(self, flow):
         flow.metadata['original_response'] = snapshot(self.engine, flow, flow.response, 'original_response')
-        apply_rules(flow, flow.metadata.get('rule_revision', self.engine.rules), 'response', MAX_BODY)
+        if not flow.metadata.get('mock'):
+            apply_rules(flow, flow.metadata.get('rule_revision', self.engine.rules), 'response', MAX_BODY)
         self.record(flow)
 
     def error(self, flow):
@@ -164,7 +170,7 @@ class CaptureAddon:
         summary = {'id': flow.id, 'session': flow.metadata.get('session', self.engine.store.session), 'started': started, 'method': request.method, 'url': display_url(request.pretty_url, host), 'host': host, 'destination_host': request.host, 'path': request.path, 'status': response.status_code if response else None, 'duration': round((ended-started)*1000) if ended else None, 'size': len(response.raw_content or b'') if response else 0, 'client': str(flow.client_conn.peername[0]) if flow.client_conn.peername else '', 'error': str(flow.error) if flow.error else None, 'rules': flow.metadata.get('rules', []), 'state': 'error' if flow.error else 'complete' if response else 'pending'}
         location = flow.metadata.get('rule_location', {})
         summary.update(original_host=location.get('host', host), original_path=location.get('path', request.path), original_method=location.get('method', request.method))
-        detail = {**summary, 'request': snapshot(self.engine, flow, request, 'request'), 'response': snapshot(self.engine, flow, response, 'response'), 'original_request': flow.metadata.get('original_request'), 'original_response': flow.metadata.get('original_response')}
+        detail = {**summary, 'mock': flow.metadata.get('mock'), 'request': snapshot(self.engine, flow, request, 'request'), 'response': snapshot(self.engine, flow, response, 'response'), 'original_request': flow.metadata.get('original_request'), 'original_response': flow.metadata.get('original_response')}
         self.engine.store.save(summary, detail)
         self.engine.publish({'type': 'flow', **summary})
 
@@ -284,6 +290,65 @@ async def certificate():
 @app.get('/rules')
 async def rules():
     return engine.rules
+
+
+class MockDocument(BaseModel):
+    source: str = Field(max_length=200_000)
+    folder: str = Field(default='', max_length=4096)
+    hosts: list[str] = Field(min_length=1, max_length=20)
+    scope: str = Field(default='/driver/', max_length=1024)
+    strict: bool = True
+
+
+@app.get('/mocks')
+async def mock_status():
+    return engine.mocks.status()
+
+
+@app.post('/mocks/validate')
+@app.put('/mocks')
+async def mock_document(document: MockDocument, request: Request):
+    try:
+        data = document.model_dump()
+        data['hosts'] = validate_scope(data['hosts'], data['scope'])
+        # Compilation and fixture IO run off the capture loop. Installation is atomic.
+        scenario = await asyncio.to_thread(compile_scenario, data['source'], data['folder'])
+        if request.method == 'PUT':
+            engine.mocks.install(scenario, data)
+            engine.publish({'type': 'mocks'})
+            return engine.mocks.status()
+        return {'name': scenario.name, 'stages': list(scenario.stages), 'initial': scenario.initial}
+    except (MockError, OSError) as error:
+        raise HTTPException(422, str(error))
+
+
+class MockControl(BaseModel):
+    action: str
+    stage: str = ''
+
+
+@app.post('/mocks/control')
+async def mock_control(command: MockControl):
+    module = engine.mocks
+    if command.action not in ('enable', 'disable', 'stage', 'reset', 'clear'):
+        raise HTTPException(422, 'Неизвестная команда')
+    if command.action in ('enable', 'stage', 'reset') and not module.scenario:
+        raise HTTPException(409, 'Сначала примените корректный сценарий')
+    if command.action == 'stage':
+        if command.stage not in module.scenario.stages:
+            raise HTTPException(422, 'Этап не найден')
+        module.stage = command.stage
+    elif command.action == 'enable':
+        module.enabled = True
+    elif command.action == 'disable':
+        module.enabled = False
+    elif command.action == 'reset':
+        module.stage = module.scenario.initial
+        module.logs.clear()
+    else:
+        module.logs.clear()
+    engine.publish({'type': 'mocks'})
+    return module.status()
 
 
 @app.put('/rules')

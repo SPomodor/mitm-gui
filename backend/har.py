@@ -73,7 +73,7 @@ def export_har(root: Path, session, rows):
     try:
         with handle:
             handle.write('{"log":')
-            header = {'version': '1.2', 'creator': {'name': 'CHLS', 'version': os.environ.get('CHLS_VERSION', '0.2.2')},
+            header = {'version': '1.2', 'creator': {'name': 'CHLS', 'version': os.environ.get('CHLS_VERSION', '0.3.0')},
                       '_chlsSession': session, 'pages': []}
             handle.write(json.dumps(header, ensure_ascii=False)[:-1] + ',"entries":[')
             for index, row in enumerate(rows):

@@ -131,6 +131,12 @@ declare global {
         data?: unknown,
       ) => Promise<T>;
       chooseFile: () => Promise<string | null>;
+      chooseMockFolder: () => Promise<string | null>;
+      mockOrderTemplate: () => Promise<string>;
+      importMockScript: () => Promise<{
+        source: string;
+        folder: string;
+      } | null>;
       saveText: (name: string, text: string) => Promise<boolean>;
       download: (route: string, name: string) => Promise<boolean>;
       exportSession: (id: string, name: string) => Promise<boolean>;

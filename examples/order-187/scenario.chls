@@ -1,0 +1,49 @@
+# Шаблон по присланному автотесту. JSON-файлы не входят в поставку.
+# Выберите папку с order/187 и укажите реальные домены в CHLS.
+модуль "Заказ косметики · 187"
+файлы "order/187"
+начало "Собирается"
+
+путь info = "/driver/v1/grocery-pro-bdu/v1/order/info"
+путь polling = "/driver/polling/order"
+путь state = "/driver/v1/cargo-performer-orders-app-api/v2/state"
+путь init = "/driver/v1/cargo-pro-api/grocery/v1/order/exchange/init"
+путь confirm = "/driver/v1/cargo-pro-api/grocery/v1/order/exchange/confirm"
+
+общие:
+  confirm -> 200 пусто
+  "/driver/v1/cargo-pro-api/cargo/v1/order/exchange/confirm" -> 200 пусто
+  "/driver/v1/cargo-performer-orders-app-api/seen" -> 200 пусто
+  "/driver/v1/cargo-performer-orders-app-api/requestconfirm/driving" -> 200 пусто
+  "/driver/v1/cargo-performer-orders-app-api/requestconfirm/complete" -> 200 пусто
+  "/driver/v1/cargo-pro-bdu/cargo/v1/order/voiceforwarding" -> 200 "0_voiceforwarding.json"
+  "/driver/v1/lavka_timetable/v1/courier-shifts/actual" -> 200 "shifts_actual_in_progress.json"
+  polling -> 200 "0_polling_order_income.json"
+  state -> 200 "0_cargo_state.json"
+
+этап "Собирается":
+  info -> 200 "0_income_order_info.json"
+
+этап "В магазин":
+  info -> 200 "1_to_beauty_order_info.json"
+
+этап "В магазине":
+  info -> 200 "2_at_beauty_order_info.json"
+
+этап "К клиенту":
+  info -> 200 "3_to_client_order_info.json"
+
+этап "Передать заказ":
+  info -> 200 "4_at_client_order_info.json"
+
+этап "Вернуться":
+  info -> 200 "5_returning_order_info.json"
+
+этап "Завершён":
+  init -> 200 "6_complete_exchange_init.json"
+  confirm -> 200 "6_complete_exchange_confirm.json"
+  info -> 200 "6_complete_order_info.json"
+  polling -> 200 "6_polling_order_complete.json"
+  state -> 200 "6_cargo_state_empty.json"
+
+# Мок конфигов/экспериментов нужно добавить после уточнения его HTTP-запросов.

@@ -16,8 +16,8 @@ import httpx
 import pytest
 
 
-def free_port():
-    with socket.socket() as sock:
+def free_port(kind=socket.SOCK_STREAM):
+    with socket.socket(type=kind) as sock:
         sock.bind(('127.0.0.1', 0))
         return sock.getsockname()[1]
 
@@ -43,7 +43,7 @@ class Upstream(http.server.BaseHTTPRequestHandler):
 @pytest.fixture(scope='module')
 def environment(tmp_path_factory):
     root = tmp_path_factory.mktemp('engine')
-    api_port, proxy_port, wg_port = free_port(), free_port(), free_port()
+    api_port, proxy_port, wg_port = free_port(), free_port(), free_port(socket.SOCK_DGRAM)
     (root / 'capture.json').write_text(json.dumps({'http': True, 'wireguard': True, 'port': proxy_port, 'wg_port': wg_port, 'lan': False}), encoding='utf-8')
     log = (root / 'log.txt').open('w', encoding='utf-8')
     command = [os.environ['CHLS_TEST_ENGINE']] if os.environ.get('CHLS_TEST_ENGINE') else [sys.executable, '-m', 'backend']
@@ -312,3 +312,57 @@ def test_occupied_port_on_autostart_keeps_management_api_available(tmp_path):
             assert status['running'] is False
             assert status['errors'] and 'автоматически' in status['errors'][0]
             assert len(client.get('/sessions').json()) == 1
+
+
+def test_mock_module_real_http_tls_stage_priority_and_failed_apply(environment):
+    client, port, _, upstream, root = environment
+    previous = client.get('/rules').json()
+    source = '''модуль "Интеграция"
+начало "Собирается"
+путь info = "/driver/order/info"
+общие:
+ /driver/state -> 200 {"active":true}
+этап "Собирается":
+ GET info -> 200 "mock-order.json"
+этап "Завершён":
+ GET info -> 200 {"status":"completed"}
+ /driver/state -> 200 {"active":false}
+'''
+    (root / 'mock-order.json').write_text('{"status":"assembling"}', 'utf-8')
+    document = dict(source=source, folder=str(root), hosts=['127.0.0.1', 'offline.invalid'], scope='/driver/', strict=True)
+    try:
+        assert client.post('/capture/start', json={'port': port, 'lan': False}).status_code == 200
+        assert client.get('/mocks').json()['enabled'] is False
+        assert client.post('/mocks/validate', json=document).status_code == 200
+        assert client.get('/mocks').json()['stages'] == []
+        assert client.put('/mocks', json=document).status_code == 200
+        # Response Rewrite must not change a mock's response.
+        assert client.put('/rules', json=[rule('interfering-status', action='status', phase='response', rewrite={'replacement_value': '418'})]).status_code == 200
+        with httpx.Client(proxy=f'http://127.0.0.1:{port}', trust_env=False) as proxy:
+            assert proxy.get(upstream + '/driver/order/info').status_code == 418
+            assert client.post('/mocks/control', json={'action': 'enable'}).status_code == 200
+            for i in range(3):
+                response = proxy.get(upstream + '/driver/order/info', params={'poll': i})
+                assert response.status_code == 200 and response.json()['status'] == 'assembling'
+            assert client.get('/mocks').json()['stage'] == 'Собирается'
+            assert proxy.get(upstream + '/driver/missing').status_code == 501
+            assert proxy.get(upstream + '/outside').status_code == 418
+            failed = client.put('/mocks', json={**document, 'source': source.replace('mock-order.json', 'missing.json')})
+            assert failed.status_code == 422 and 'Строка' in failed.json()['detail']
+            assert proxy.get(upstream + '/driver/order/info').json()['status'] == 'assembling'
+            assert client.post('/mocks/control', json={'action': 'stage', 'stage': 'Завершён'}).status_code == 200
+            assert proxy.get(upstream + '/driver/order/info').json()['status'] == 'completed'
+            assert proxy.get(upstream + '/driver/state').json()['active'] is False
+            assert client.post('/mocks/control', json={'action': 'stage', 'stage': 'missing'}).status_code == 422
+            context = ssl.create_default_context(cafile=str(root / 'certificates' / 'mitmproxy-ca-cert.pem'))
+            with httpx.Client(proxy=f'http://127.0.0.1:{port}', verify=context, trust_env=False) as tls_proxy:
+                assert tls_proxy.get('https://offline.invalid/driver/order/info').json()['status'] == 'completed'
+            flows = client.get('/flows').json()
+            mocked = next(f for f in flows if f['host'] == 'offline.invalid')
+            assert client.get('/flows/' + mocked['id']).json()['mock']['stage'] == 'Завершён'
+            assert client.post('/mocks/control', json={'action': 'reset'}).json()['stage'] == 'Собирается'
+            assert client.post('/mocks/control', json={'action': 'disable'}).status_code == 200
+            assert proxy.get(upstream + '/driver/order/info').status_code == 418
+    finally:
+        client.post('/mocks/control', json={'action': 'disable'})
+        client.put('/rules', json=previous)

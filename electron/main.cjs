@@ -29,7 +29,7 @@ if (process.env.CHLS_USER_DATA) {
   app.setPath("userData", path.resolve(process.env.CHLS_USER_DATA));
 }
 const allowed =
-  /^\/(status|capture\/(start|stop)|wireguard|certificate|rules(?:\/[a-zA-Z0-9-]+)?|sessions(?:\/[a-zA-Z0-9-]+(?:\/export)?)?|flows(?:\/[a-zA-Z0-9-]+(?:\/body\/(?:original_)?(?:request|response))?)?)(?:\?.*)?$/;
+  /^\/(status|mocks(?:\/(?:validate|control))?|capture\/(start|stop)|wireguard|certificate|rules(?:\/[a-zA-Z0-9-]+)?|sessions(?:\/[a-zA-Z0-9-]+(?:\/export)?)?|flows(?:\/[a-zA-Z0-9-]+(?:\/body\/(?:original_)?(?:request|response))?)?)(?:\?.*)?$/;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function request(route, method = "GET", data, timeout = 20000) {
@@ -273,6 +273,37 @@ ipcMain.handle("choose-file", async (event) => {
     title: "Файл для Map Local",
   });
   return result.canceled ? null : result.filePaths[0];
+});
+ipcMain.handle("choose-mock-folder", async (event) => {
+  const owner = trusted(event);
+  const result = await dialog.showOpenDialog(owner, {
+    title: "Папка с JSON для моков",
+    properties: ["openDirectory"],
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+ipcMain.handle("mock-order-template", async (event) => {
+  trusted(event);
+  const base = app.isPackaged ? process.resourcesPath : root;
+  return fs.promises.readFile(
+    path.join(base, "examples", "order-187", "scenario.chls"),
+    "utf8",
+  );
+});
+ipcMain.handle("import-mock-script", async (event) => {
+  const owner = trusted(event);
+  const result = await dialog.showOpenDialog(owner, {
+    title: "Открыть сценарий",
+    properties: ["openFile"],
+    filters: [{ name: "CHLS сценарий", extensions: ["chls", "txt"] }],
+  });
+  if (result.canceled) return null;
+  if ((await fs.promises.stat(result.filePaths[0])).size > 800000)
+    throw new Error("Сценарий слишком большой");
+  return {
+    source: await fs.promises.readFile(result.filePaths[0], "utf8"),
+    folder: path.dirname(result.filePaths[0]),
+  };
 });
 ipcMain.handle("save-text", async (event, name, text) => {
   trusted(event);
