@@ -29,8 +29,15 @@ interface MockLog {
   blocked: boolean;
   source: string;
   line: number | null;
+  transition?: { source: string; destination: string; line: number } | null;
+  trigger_note?: string;
 }
 interface MockStatus extends MockDocument {
+  mode: "free" | "scenario";
+  triggers: Record<
+    string,
+    { method: string; path: string; destination: string; line: number }[]
+  >;
   name: string;
   stages: string[];
   stage: string;
@@ -43,27 +50,35 @@ const demo = `# Учебный пример, не ответы реальног�
 модуль "Демо заказа"
 начало "Собирается"
 путь info = "/driver/demo/order"
+путь arrive = "/driver/v1/cargo-pro-api/grocery/v1/order/arrive-at-point"
+путь confirm = "/driver/v1/cargo-pro-api/grocery/v1/order/exchange/confirm"
 
 общие:
   POST "/driver/demo/seen" -> 200 пусто
 
 этап "Собирается":
   GET info -> 200 {"orderId":"demo-order","status":"assembling","mock":true}
+  при POST confirm -> следующий
 
 этап "В магазин":
   GET info -> 200 {"orderId":"demo-order","status":"to_store","mock":true}
+  при POST arrive -> следующий
 
 этап "В магазине":
   GET info -> 200 {"orderId":"demo-order","status":"at_store","mock":true}
+  при POST confirm -> следующий
 
 этап "К клиенту":
   GET info -> 200 {"orderId":"demo-order","status":"to_customer","mock":true}
+  при POST arrive -> следующий
 
 этап "Передать заказ":
   GET info -> 200 {"orderId":"demo-order","status":"at_customer","mock":true}
+  при POST confirm -> следующий
 
 этап "Вернуться":
   GET info -> 200 {"orderId":"demo-order","status":"returning","mock":true}
+  при POST confirm -> следующий
 
 этап "Завершён":
   GET info -> 200 {"orderId":"demo-order","status":"completed","mock":true}
@@ -152,10 +167,14 @@ export default function Mocks({
       setBusy(false);
     }
   }
-  async function control(action: string, stage = "") {
+  async function control(action: string, stage = "", mode = "free") {
     await run(async () => {
       setStatus(
-        await api<MockStatus>("/mocks/control", "POST", { action, stage }),
+        await api<MockStatus>("/mocks/control", "POST", {
+          action,
+          stage,
+          mode,
+        }),
       );
     });
   }
@@ -163,9 +182,7 @@ export default function Mocks({
     <section className="mocks-page">
       <div className="page-heading">
         <div>
-          <h1>
-            Моки <span className="tag">Сценарии</span>
-          </h1>
+          <h1>Сценарии</h1>
           <p>Общие ответы и этапы заказа · модуль включается отдельно</p>
         </div>
         <div className="heading-actions">
@@ -183,7 +200,7 @@ export default function Mocks({
             onClick={() => control(status?.enabled ? "disable" : "enable")}
           >
             {status?.enabled ? <Square size={12} /> : <Play size={13} />}{" "}
-            {status?.enabled ? "Выключить мок" : "Включить мок"}
+            {status?.enabled ? "Выключить сценарий" : "Включить сценарий"}
           </button>
         </div>
       </div>
@@ -195,6 +212,18 @@ export default function Mocks({
             {status?.enabled ? `Активен · ${status.stage}` : "Выключен"}
             {dirty && " · есть черновик"}
           </span>
+          <label className="mock-mode-label">
+            Режим
+            <select
+              aria-label="Режим сценария"
+              value={status?.mode || "free"}
+              disabled={busy || !status}
+              onChange={(e) => control("mode", "", e.target.value)}
+            >
+              <option value="free">Свободный</option>
+              <option value="scenario">По сценарию</option>
+            </select>
+          </label>
         </div>
         {!!status?.stages.length && (
           <div className="mock-stage-buttons">
@@ -203,12 +232,27 @@ export default function Mocks({
                 key={stage}
                 className={`button ${status.stage === stage ? "selected" : ""}`}
                 aria-pressed={status.stage === stage}
-                disabled={busy}
+                disabled={busy || status.mode === "scenario"}
                 onClick={() => control("stage", stage)}
               >
                 {stage}
               </button>
             ))}
+          </div>
+        )}
+        {status?.mode === "scenario" && (
+          <div
+            className="mock-next-trigger"
+            title={(status.triggers[status.stage] || [])
+              .map((t) => `${t.method} ${t.path} → ${t.destination}`)
+              .join("\n")}
+          >
+            {(status.triggers[status.stage] || []).length
+              ? "Ждём: " +
+                status.triggers[status.stage]
+                  .map((t) => `${t.method} ${t.path} → ${t.destination}`)
+                  .join(" · ")
+              : "Для этого этапа нет автоматических переходов. Для ручного выбора включите «Свободный» режим."}
           </div>
         )}
       </div>
@@ -306,7 +350,7 @@ export default function Mocks({
             <label>
               Домены через запятую
               <input
-                aria-label="Домены мок-модуля"
+                aria-label="Домены сценария"
                 placeholder="api.example.com"
                 disabled={hostText.trim() === "*"}
                 value={hostText}
@@ -421,7 +465,7 @@ export default function Mocks({
                     "Сценарий применён" +
                       (value.enabled
                         ? " и активен."
-                        : ". Нажмите «Включить мок»."),
+                        : ". Нажмите «Включить сценарий»."),
                   );
                 })
               }
@@ -468,6 +512,12 @@ export default function Mocks({
                     {log.source}
                     {log.line ? ` · строка ${log.line}` : ""}
                   </small>
+                  {log.transition && (
+                    <strong className="mock-transition">
+                      {log.transition.source} → {log.transition.destination}
+                    </strong>
+                  )}
+                  {log.trigger_note && <small>{log.trigger_note}</small>}
                 </div>
               ))
             ) : (
@@ -489,6 +539,14 @@ export default function Mocks({
                 'файлы "order/187"\nпуть info = "/driver/order/info"\n\nобщие:\n  POST "/driver/seen" -> 200 пусто\n\nэтап "Собирается":\n  GET info -> 200 "order.json"'
               }
             </pre>
+            <p>
+              Внутри этапа добавьте{" "}
+              <code>при POST "/driver/order/confirm" -&gt; следующий</code> или
+              укажите имя этапа в кавычках вместо «следующий». В режиме «По
+              сценарию» успешный ответ 2xx запускает переход. Без явно заданного
+              ответа ручка триггера возвращает 200 с пустым телом. В свободном
+              режиме этапы выбираются вручную.
+            </p>
             <p>
               JSON-файлы проверяются и загружаются при применении. После их
               изменения примените сценарий снова. Выключенный модуль не меняет

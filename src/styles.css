@@ -1801,6 +1801,33 @@ button .spin {
   background: var(--selected);
   border-color: var(--accent);
 }
+.mock-mode-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  color: var(--muted);
+}
+.mock-mode-label select {
+  font-size: 12px;
+  padding: 4px 8px;
+  height: 30px;
+}
+.mock-next-trigger {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mock-transition {
+  color: var(--accent);
+  font-weight: 500;
+}
+.mock-stage-buttons button:disabled {
+  opacity: 0.7;
+}
 .mock-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;

@@ -325,25 +325,35 @@ async def mock_document(document: MockDocument, request: Request):
 class MockControl(BaseModel):
     action: str
     stage: str = ''
+    mode: str = 'free'
 
 
 @app.post('/mocks/control')
 async def mock_control(command: MockControl):
     module = engine.mocks
-    if command.action not in ('enable', 'disable', 'stage', 'reset', 'clear'):
+    if command.action not in ('enable', 'disable', 'stage', 'reset', 'clear', 'mode'):
         raise HTTPException(422, 'Неизвестная команда')
     if command.action in ('enable', 'stage', 'reset') and not module.scenario:
         raise HTTPException(409, 'Сначала примените корректный сценарий')
     if command.action == 'stage':
+        if module.mode != 'free':
+            raise HTTPException(409, 'Для ручного выбора этапа включите «Свободный» режим')
         if command.stage not in module.scenario.stages:
             raise HTTPException(422, 'Этап не найден')
         module.stage = command.stage
+        module.recent_triggers.clear()
+    elif command.action == 'mode':
+        try:
+            module.set_mode(command.mode)
+        except (MockError, OSError) as error:
+            raise HTTPException(422, str(error))
     elif command.action == 'enable':
         module.enabled = True
     elif command.action == 'disable':
         module.enabled = False
     elif command.action == 'reset':
         module.stage = module.scenario.initial
+        module.recent_triggers.clear()
         module.logs.clear()
     else:
         module.logs.clear()

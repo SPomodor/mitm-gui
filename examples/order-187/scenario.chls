@@ -9,6 +9,7 @@
 путь state = "/driver/v1/cargo-performer-orders-app-api/v2/state"
 путь init = "/driver/v1/cargo-pro-api/grocery/v1/order/exchange/init"
 путь confirm = "/driver/v1/cargo-pro-api/grocery/v1/order/exchange/confirm"
+путь arrive = "/driver/v1/cargo-pro-api/grocery/v1/order/arrive-at-point"
 
 общие:
   confirm -> 200 пусто
@@ -23,21 +24,29 @@
 
 этап "Собирается":
   info -> 200 "0_income_order_info.json"
+  при POST confirm -> следующий
 
 этап "В магазин":
   info -> 200 "1_to_beauty_order_info.json"
+  при POST arrive -> следующий
 
 этап "В магазине":
   info -> 200 "2_at_beauty_order_info.json"
+  при POST confirm -> следующий
 
 этап "К клиенту":
   info -> 200 "3_to_client_order_info.json"
+  при POST arrive -> следующий
 
 этап "Передать заказ":
   info -> 200 "4_at_client_order_info.json"
+  при POST confirm -> следующий
 
 этап "Вернуться":
   info -> 200 "5_returning_order_info.json"
+  init -> 200 "6_complete_exchange_init.json"
+  confirm -> 200 "6_complete_exchange_confirm.json"
+  при POST confirm -> следующий
 
 этап "Завершён":
   init -> 200 "6_complete_exchange_init.json"

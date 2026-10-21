@@ -191,14 +191,20 @@ async function unusedPort() {
     });
     await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
     const originPort = upstream.address().port;
-    async function fetchProxy(url, host = `api.example.test:${originPort}`) {
+    async function fetchProxy(
+      url,
+      host = `api.example.test:${originPort}`,
+      method = "GET",
+      extraHeaders = {},
+    ) {
       return new Promise((resolve, reject) => {
         const req = http.request(
           {
             hostname: "127.0.0.1",
             port: proxyPort,
             path: url,
-            headers: { Host: host },
+            method,
+            headers: { Host: host, ...extraHeaders },
           },
           (res) => {
             let text = "";
@@ -468,7 +474,7 @@ async function unusedPort() {
     });
     await page
       .getByRole("navigation")
-      .getByRole("button", { name: /^Моки/ })
+      .getByRole("button", { name: /^Сценарии/ })
       .click();
     if (
       !(await page.evaluate(() => window.chls.mockOrderTemplate())).includes(
@@ -477,16 +483,16 @@ async function unusedPort() {
     )
       throw new Error("Bundled order template is missing");
     await page.getByRole("button", { name: "Демо", exact: true }).click();
-    await page.getByLabel("Домены мок-модуля").fill("api.example.test");
+    await page.getByLabel("Домены сценария").fill("api.example.test");
     await page.getByRole("checkbox", { name: /^Все домены/ }).check();
-    await expect(page.getByLabel("Домены мок-модуля")).toBeDisabled();
+    await expect(page.getByLabel("Домены сценария")).toBeDisabled();
     await page.getByRole("button", { name: "Проверить", exact: true }).click();
     await expect(page.getByRole("status")).toContainText("Проверено: 7 этапов");
     await page
       .getByRole("button", { name: "Применить сценарий", exact: true })
       .click();
     await page
-      .getByRole("button", { name: "Включить мок", exact: true })
+      .getByRole("button", { name: "Включить сценарий", exact: true })
       .click();
     const mockUrl = `http://127.0.0.1:${originPort}/driver/demo/order`;
     if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "assembling")
@@ -522,6 +528,47 @@ async function unusedPort() {
       .click();
     if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "assembling")
       throw new Error("Mock reset failed");
+    await page.getByLabel("Режим сценария").selectOption("scenario");
+    await expect(page.getByLabel("Режим сценария")).toHaveValue("scenario");
+    await expect(
+      page.getByRole("button", { name: "В магазин", exact: true }),
+    ).toBeDisabled();
+    const confirmUrl = `http://127.0.0.1:${originPort}/driver/v1/cargo-pro-api/grocery/v1/order/exchange/confirm`;
+    const arriveUrl = `http://127.0.0.1:${originPort}/driver/v1/cargo-pro-api/grocery/v1/order/arrive-at-point`;
+    await fetchProxy(confirmUrl, undefined, "POST", {
+      "Idempotency-Key": "ui-accept",
+    });
+    await expect(
+      page.getByRole("button", { name: "В магазин", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await fetchProxy(arriveUrl, undefined, "POST", {
+      "Idempotency-Key": "ui-arrive-store",
+    });
+    if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "at_store")
+      throw new Error("Arrive trigger did not advance the scenario");
+    await fetchProxy(confirmUrl, undefined, "POST", {
+      "Idempotency-Key": "ui-pickup",
+    });
+    await fetchProxy(arriveUrl, undefined, "POST", {
+      "Idempotency-Key": "ui-arrive-client",
+    });
+    await fetchProxy(confirmUrl, undefined, "POST", {
+      "Idempotency-Key": "ui-deliver",
+    });
+    await fetchProxy(confirmUrl, undefined, "POST", {
+      "Idempotency-Key": "ui-deliver",
+    });
+    if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "returning")
+      throw new Error("Duplicate confirm skipped a stage");
+    await fetchProxy(confirmUrl, undefined, "POST", {
+      "Idempotency-Key": "ui-return",
+    });
+    await expect(
+      page.getByRole("button", { name: "Завершён", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".mock-log-list")).toContainText(
+      "Вернуться → Завершён",
+    );
     await page.screenshot({
       animations: "disabled",
       path: path.join(output, "09-mock-module.png"),
@@ -529,18 +576,24 @@ async function unusedPort() {
     await expect(
       page.getByRole("button", { name: "Применить сценарий", exact: true }),
     ).toBeInViewport({ ratio: 1 });
+    await page.getByLabel("Режим сценария").selectOption("free");
+    await expect(
+      page.getByRole("button", { name: "В магазин", exact: true }),
+    ).toBeEnabled();
     await page
       .getByRole("navigation")
       .getByRole("button", { name: /^Трафик/ })
       .click();
-    await expect(page.getByText("Мок активен", { exact: false })).toBeVisible();
+    await expect(
+      page.getByText("Сценарий активен", { exact: false }),
+    ).toBeVisible();
     await page
       .getByRole("navigation")
-      .getByRole("button", { name: /^Моки/ })
+      .getByRole("button", { name: /^Сценарии/ })
       .click();
     await expect(page.getByLabel("Код сценария")).toHaveValue(originalSource);
     await page
-      .getByRole("button", { name: "Выключить мок", exact: true })
+      .getByRole("button", { name: "Выключить сценарий", exact: true })
       .click();
     if (JSON.parse((await fetchProxy(mockUrl)).text).app !== "CHLS")
       throw new Error("Normal proxy did not resume after disabling mock");
@@ -599,6 +652,9 @@ async function unusedPort() {
           "mock DSL validation and demo",
           "all-host mock toggle with two domains",
           "manual mock stages and reset",
+          "scenario mode triggers for arrive and confirm",
+          "duplicate confirm does not skip stages",
+          "switching back to free mode restores manual stage selection",
           "strict unmatched request blocking",
           "invalid mock keeps active revision",
           "disabled mock restores normal proxy",

@@ -368,7 +368,7 @@ export default function App() {
             onClick={() => setPage("mocks")}
           >
             <FileJson size={17} />
-            Моки{mockEnabled && <span className="tag">ON</span>}
+            Сценарии{mockEnabled && <span className="tag">ON</span>}
           </button>
           <button className="nav-item" onClick={() => setConnect(true)}>
             <Smartphone size={17} />
@@ -486,7 +486,7 @@ export default function App() {
                 ? "Трафик"
                 : page === "rules"
                   ? "Правила"
-                  : "Моки"}
+                  : "Сценарии"}
             </strong>
           </div>
           <div className="toolbar-actions">
@@ -629,7 +629,7 @@ export default function App() {
           <div>
             {activeRules} правил активно
             {mockEnabled && (
-              <span className="mock-active-label"> · Мок активен</span>
+              <span className="mock-active-label"> · Сценарий активен</span>
             )}
             <span className="footer-divider" />
             Local workspace

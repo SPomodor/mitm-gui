@@ -374,3 +374,56 @@ def test_mock_module_real_http_tls_stage_priority_and_failed_apply(environment):
     finally:
         client.post('/mocks/control', json={'action': 'disable'})
         client.put('/rules', json=previous)
+
+
+def test_trigger_modes_real_requests_retry_guard_and_reset(environment):
+    client, port, _, upstream, _ = environment
+    arrive = '/driver/v1/cargo-pro-api/grocery/v1/order/arrive-at-point'
+    confirm = '/driver/v1/cargo-pro-api/grocery/v1/order/exchange/confirm'
+    source = f'''модуль "Переходы"
+путь arrive = "{arrive}"
+путь confirm = "{confirm}"
+общие:
+ POST confirm -> 200 {{"ack":true}}
+этап "start":
+ GET /driver/info -> 200 {{"stage":"start"}}
+ при POST arrive -> следующий
+этап "arrived":
+ GET /driver/info -> 200 {{"stage":"arrived"}}
+ при POST confirm -> следующий
+этап "confirmed":
+ GET /driver/info -> 200 {{"stage":"confirmed"}}
+ при POST confirm -> "complete"
+этап "complete":
+ GET /driver/info -> 200 {{"stage":"complete"}}
+'''
+    document = dict(source=source, folder='', hosts=['*'], scope='/driver/', strict=False)
+    try:
+        client.post('/mocks/control', json={'action': 'mode', 'mode': 'free'})
+        assert client.put('/mocks', json=document).status_code == 200
+        assert client.post('/mocks/control', json={'action': 'enable'}).status_code == 200
+        with httpx.Client(proxy=f'http://127.0.0.1:{port}', trust_env=False) as proxy:
+            assert proxy.post(upstream + arrive).status_code == 200
+            assert client.get('/mocks').json()['stage'] == 'start'
+            assert client.post('/mocks/control', json={'action': 'stage', 'stage': 'confirmed'}).status_code == 200
+            assert client.post('/mocks/control', json={'action': 'reset'}).json()['stage'] == 'start'
+            assert client.post('/mocks/control', json={'action': 'mode', 'mode': 'scenario'}).json()['mode'] == 'scenario'
+            assert client.post('/mocks/control', json={'action': 'stage', 'stage': 'complete'}).status_code == 409
+            assert proxy.post(upstream + arrive).status_code == 200
+            assert proxy.get(upstream + '/driver/info?poll=1').json()['stage'] == 'arrived'
+            assert proxy.post(upstream + confirm, headers={'Idempotency-Key': 'one'}).json() == {'ack': True}
+            assert client.get('/mocks').json()['stage'] == 'confirmed'
+            proxy.post(upstream + confirm, headers={'Idempotency-Key': 'one'})
+            assert client.get('/mocks').json()['stage'] == 'confirmed'
+            proxy.post(upstream + confirm, headers={'Idempotency-Key': 'two'})
+            assert proxy.get(upstream + '/driver/info').json()['stage'] == 'complete'
+            assert any(log.get('transition', {}).get('destination') == 'complete' for log in client.get('/mocks').json()['logs'] if log.get('transition'))
+            assert client.post('/mocks/control', json={'action': 'reset'}).json()['stage'] == 'start'
+            # Reset clears replay guards, so the same request can start a new run.
+            assert proxy.post(upstream + arrive).status_code == 200
+            assert client.get('/mocks').json()['stage'] == 'arrived'
+            assert client.post('/mocks/control', json={'action': 'mode', 'mode': 'invalid'}).status_code == 422
+            assert client.get('/mocks').json()['mode'] == 'scenario'
+    finally:
+        client.post('/mocks/control', json={'action': 'disable'})
+        client.post('/mocks/control', json={'action': 'mode', 'mode': 'free'})
