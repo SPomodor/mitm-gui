@@ -43,7 +43,7 @@ def test_free_mode_and_successful_scenario_transition(tmp_path):
     flow = make_flow(ARRIVE, method='POST')
     module.handle(flow)
     assert module.stage == 'two'
-    assert json.loads(flow.response.content) == {'ack': 'one'}
+    assert flow.response.status_code == 200 and flow.response.content == b''
     assert flow.metadata['mock']['stage'] == 'one'
     assert flow.metadata['mock']['transition']['destination'] == 'two'
     assert module.logs[-1]['transition']['source'] == 'one'
@@ -93,17 +93,32 @@ def test_explicit_request_identity_distinguishes_new_actions_from_retries(tmp_pa
     assert module.stage == 'four'
 
 
-def test_failed_reply_wrong_method_wrong_scope_and_disabled_do_not_advance(tmp_path):
+def test_trigger_ignores_reply_but_wrong_method_scope_and_disabled_do_not_advance(tmp_path):
     module = module_at(tmp_path, SOURCE.replace('201 {"ack":"one"}', '409 {"error":"failed"}'))
     module.set_mode('scenario')
-    module.handle(make_flow(ARRIVE, method='POST'))
-    assert module.stage == 'one'
-    assert 'не 2xx' in module.logs[-1]['trigger_note']
+    flow = make_flow(ARRIVE, method='POST')
+    module.handle(flow)
+    assert module.stage == 'two'
+    assert flow.response.status_code == 200 and flow.response.content == b''
     assert not module.handle(make_flow(ARRIVE, method='GET'))
     module.hosts = ['specific.test']
     assert not module.handle(make_flow(ARRIVE, method='POST'))
     module.enabled = False
     assert not module.handle(make_flow(ARRIVE, host='specific.test', method='POST'))
+
+
+@pytest.mark.parametrize('status', [200, 201, 302, 400, 409, 500])
+def test_active_trigger_always_returns_empty_200_regardless_of_configured_reply(tmp_path, status):
+    module = module_at(tmp_path, SOURCE.replace('201 {"ack":"one"}', f'{status} {{"ignored":true}}'))
+    free = make_flow(ARRIVE, method='POST')
+    module.handle(free)
+    assert free.response.status_code == status and module.stage == 'one'
+    module.set_mode('scenario')
+    automatic = make_flow(ARRIVE, method='POST')
+    module.handle(automatic)
+    assert automatic.response.status_code == 200
+    assert automatic.response.content == b''
+    assert module.stage == 'two'
 
 
 @pytest.mark.parametrize('source', [

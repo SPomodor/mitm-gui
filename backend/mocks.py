@@ -284,7 +284,10 @@ class MockModule:
             reply = reply or next((r for r in group if r.path == path and r.method == '*'), None)
             if reply:
                 break
-        if reply is None and known_trigger:
+        if self.mode == 'scenario' and trigger:
+            # A transition is a local acknowledgement, independent of reply rules.
+            reply = Reply(flow.request.method, path, 200, b'', 'Триггер: 200, пустой ответ', trigger.line)
+        elif reply is None and known_trigger:
             reply = Reply(flow.request.method, path, 200, b'', 'Триггер: пустой ответ', known_trigger.line)
         if not reply and not (self.strict and (self.scope == '/' or path == self.scope.rstrip('/') or path.startswith(self.scope.rstrip('/') + '/'))):
             return False
@@ -303,8 +306,6 @@ class MockModule:
                 trigger_note = 'Свободный режим: автоматический переход выключен'
             elif trigger is None:
                 trigger_note = 'Для текущего этапа переход не настроен'
-            elif not 200 <= status < 300:
-                trigger_note = 'Переход не выполнен: ответ не 2xx'
             else:
                 now = self.clock()
                 self.recent_triggers = {key: expiry for key, expiry in self.recent_triggers.items() if expiry > now}

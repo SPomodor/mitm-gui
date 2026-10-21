@@ -384,7 +384,7 @@ def test_trigger_modes_real_requests_retry_guard_and_reset(environment):
 путь arrive = "{arrive}"
 путь confirm = "{confirm}"
 общие:
- POST confirm -> 200 {{"ack":true}}
+ POST confirm -> 500 {{"ignored":true}}
 этап "start":
  GET /driver/info -> 200 {{"stage":"start"}}
  при POST arrive -> следующий
@@ -411,7 +411,8 @@ def test_trigger_modes_real_requests_retry_guard_and_reset(environment):
             assert client.post('/mocks/control', json={'action': 'stage', 'stage': 'complete'}).status_code == 409
             assert proxy.post(upstream + arrive).status_code == 200
             assert proxy.get(upstream + '/driver/info?poll=1').json()['stage'] == 'arrived'
-            assert proxy.post(upstream + confirm, headers={'Idempotency-Key': 'one'}).json() == {'ack': True}
+            acknowledged = proxy.post(upstream + confirm, headers={'Idempotency-Key': 'one'})
+            assert acknowledged.status_code == 200 and acknowledged.content == b''
             assert client.get('/mocks').json()['stage'] == 'confirmed'
             proxy.post(upstream + confirm, headers={'Idempotency-Key': 'one'})
             assert client.get('/mocks').json()['stage'] == 'confirmed'
