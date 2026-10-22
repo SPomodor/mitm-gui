@@ -1,9 +1,46 @@
 import base64
 import gzip
 import json
+import sqlite3
 
 from backend.har import export_har
 from backend.store import Store
+
+
+def test_archive_lifecycle_keeps_history(tmp_path):
+    store = Store(tmp_path)
+    first = store.session
+    item = {'id': 'saved', 'session': first, 'started': 1, 'url': 'https://example.org/', 'host': 'example.org'}
+    store.save(item, item)
+    body = store.body('saved', 'response', b'archived body')
+    assert store.sessions()[0]['archived'] is False
+    second = store.new_session()['id']
+    assert next(s for s in store.sessions() if s['id'] == first)['archived'] is True
+    assert next(s for s in store.sessions() if s['id'] == second)['archived'] is False
+    store.archive_sessions()
+    assert all(s['archived'] for s in store.sessions())
+    assert store.flows(first)[0]['id'] == 'saved'
+    assert (tmp_path / 'bodies' / body).read_bytes() == b'archived body'
+    store.db.close()
+    # A force-killed app may not reach the close endpoint. Startup archives it too.
+    reopened = Store(tmp_path)
+    third = reopened.session
+    reopened.db.close()
+    recovered = Store(tmp_path)
+    assert next(s for s in recovered.sessions() if s['id'] == third)['archived'] is True
+    assert len([s for s in recovered.sessions() if not s['archived']]) == 1
+    recovered.db.close()
+
+
+def test_legacy_sessions_are_migrated_without_losing_data(tmp_path):
+    with sqlite3.connect(tmp_path / 'history.sqlite3') as db:
+        db.execute('CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT, created REAL)')
+        db.execute("INSERT INTO sessions VALUES ('old', 'My phone', 1)")
+    store = Store(tmp_path)
+    old = next(s for s in store.sessions() if s['id'] == 'old')
+    assert old['name'] == 'My phone' and old['archived'] is True
+    assert store.sessions()[0]['archived'] is False
+    store.db.close()
 
 
 def test_rename_persists_without_changing_active_session(tmp_path):

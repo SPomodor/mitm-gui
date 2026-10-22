@@ -295,12 +295,17 @@ def test_new_launch_creates_session_and_starts_capture_with_previous_settings(tm
         assert status['config']['port'] == proxy_port
         assert status['session'] != first_session
         assert len(client.get('/sessions').json()) == 2
+        listed = client.get('/sessions').json()
+        assert next(s for s in listed if s['id'] == first_session)['archived'] is True
+        assert next(s for s in listed if s['id'] == status['session'])['archived'] is False
         assert client.get('/flows').json() == []
         assert len(client.get('/flows', params={'session': first_session}).json()) == 1
         assert client.get('/rules').json()[0]['id'] == 'restart-mock'
         with httpx.Client(proxy=f'http://127.0.0.1:{proxy_port}') as proxy:
             assert proxy.get('http://restart.invalid/check').json() == {'restart': True}
         assert client.get('/flows').json()[0]['session'] == status['session']
+        assert client.post('/sessions/close').status_code == 200
+        assert all(s['archived'] for s in client.get('/sessions').json())
 
 
 def test_occupied_port_on_autostart_keeps_management_api_available(tmp_path):

@@ -870,9 +870,40 @@ async function unusedPort() {
     await page
       .getByRole("button", { name: "Новая сессия", exact: true })
       .click();
+    await expect(
+      page.locator(".session-list:not(.archive-session-list) .session-row"),
+    ).toHaveCount(1);
+    await expect(
+      page.getByRole("button", { name: "Phone debugging", exact: true }),
+    ).toHaveCount(0);
+    await expect(page.locator(".archive-toggle .archive-count")).toHaveText(
+      "1",
+    );
+    await page
+      .getByRole("button", { name: "Архив сессий", exact: true })
+      .click();
     await page
       .getByRole("button", { name: "Phone debugging", exact: true })
       .click();
+    await expect(page.locator(".page-heading:visible")).toContainText(
+      "Архив · Phone debugging",
+    );
+    await expect(
+      page.getByRole("heading", { name: "В сессии нет запросов", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "К текущей сессии", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "К текущей сессии", exact: true }),
+    ).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "Phone debugging", exact: true })
+      .click();
+    await page.screenshot({
+      animations: "disabled",
+      path: path.join(output, "13-session-archive.png"),
+    });
     await page
       .getByRole("button", {
         name: "Удалить сессию: Phone debugging",
@@ -914,6 +945,23 @@ async function unusedPort() {
       await expect
         .poll(() => electronProcess.exitCode, { timeout: 10000 })
         .not.toBeNull();
+      const { DatabaseSync } = require("node:sqlite");
+      const history = new DatabaseSync(
+        path.join(engineData, "history.sqlite3"),
+        { readOnly: true },
+      );
+      try {
+        if (
+          history
+            .prepare("SELECT COUNT(*) AS count FROM sessions WHERE archived=0")
+            .get().count !== 0
+        )
+          throw new Error(
+            "Closing the app did not archive its current session",
+          );
+      } finally {
+        history.close();
+      }
     }
     if (errors.length) throw new Error(errors.join("\n"));
     console.log(
@@ -940,6 +988,10 @@ async function unusedPort() {
           "pasted URL splits host, path and query",
           "clear session traffic through app dialog",
           "delete selected old session and return to current session",
+          "archive previous session, expand archive, browse and return to live session",
+          ...(!portable
+            ? ["native app shutdown persists session archive"]
+            : []),
           "create Rewrite",
           "separate non-modal rule window",
           "copy URL from main window while draft stays open",

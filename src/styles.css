@@ -384,6 +384,44 @@ button .spin {
   max-height: 180px;
   overflow: auto;
 }
+.archive-toggle {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+}
+.archive-toggle > span:first-of-type {
+  flex: 1;
+}
+.archive-toggle:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.archive-toggle.is-viewing {
+  color: var(--accent);
+}
+.archive-count {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.archive-session-list {
+  margin-top: 3px;
+  flex-shrink: 1;
+  min-height: 32px;
+  max-height: min(180px, 20vh);
+}
+.archive-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
 .session-row {
   display: flex;
   align-items: center;

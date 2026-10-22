@@ -227,6 +227,7 @@ async def lifespan(app):
     engine.master.shutdown()
     await master_task
     broadcast_task.cancel()
+    engine.store.archive_sessions()
     engine.store.db.close()
 
 
@@ -454,6 +455,12 @@ async def new_session():
     item = engine.store.new_session()
     engine.publish({'type': 'status'})
     return item
+
+
+@app.post('/sessions/close')
+async def close_sessions():
+    engine.store.archive_sessions()
+    return {'ok': True}
 
 
 class SessionRename(BaseModel):

@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
+  Archive,
   ArrowDown,
   ArrowDownToLine,
   ArrowLeftRight,
@@ -208,6 +209,7 @@ export default function App() {
     session,
   } = useApp();
   const [page, setPage] = useState<"traffic" | "rules" | "mocks">("traffic");
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const [renaming, setRenaming] = useState<Session | null>(null);
   const [confirmation, setConfirmation] = useState<{
     title: string;
@@ -375,6 +377,76 @@ export default function App() {
       setError((e as Error).message);
     }
   }
+  function openSession(id: string) {
+    useApp.setState({ session: id, selected: null, flows: [] });
+    setPage("traffic");
+    setHost("");
+    useApp
+      .getState()
+      .loadFlows(id)
+      .catch((e) => setError(e.message));
+  }
+  const archivedSessions = sessions.filter((s) => s.archived);
+  const viewingArchive = sessions.find((s) => s.id === session)?.archived;
+  const renderSession = (s: Session) => {
+    const SessionIcon = s.archived ? Archive : Layers;
+    return (
+      <div
+        className={`session-row ${session === s.id ? "selected" : ""}`}
+        key={s.id}
+      >
+        <button
+          title={s.name}
+          className={`session-item ${session === s.id ? "selected" : ""}`}
+          onClick={() => openSession(s.id)}
+        >
+          <SessionIcon size={14} />
+          <span>{s.name}</span>
+          {status?.session === s.id && <span className="tiny-dot" />}
+        </button>
+        <IconButton
+          title={`Переименовать: ${s.name}`}
+          onClick={() => setRenaming(s)}
+        >
+          <Pencil size={13} />
+        </IconButton>
+        <IconButton
+          title={`Удалить сессию: ${s.name}`}
+          disabled={status?.session === s.id || !!exporting}
+          onClick={() =>
+            setConfirmation({
+              title: "Удалить сессию?",
+              text: `«${s.name}» и весь её трафик будут удалены.`,
+              action: async () => {
+                await api(`/sessions/${s.id}`, "DELETE");
+                if (useApp.getState().session === s.id)
+                  useApp.setState({
+                    session: "",
+                    selected: null,
+                    flows: [],
+                  });
+                setHost("");
+                await refresh();
+              },
+            })
+          }
+        >
+          <Trash2 size={13} />
+        </IconButton>
+        <IconButton
+          title={`Экспортировать HAR: ${s.name}`}
+          disabled={!!exporting}
+          onClick={() => exportSession(s)}
+        >
+          {exporting === s.id ? (
+            <LoaderCircle size={13} className="spin" />
+          ) : (
+            <Download size={13} />
+          )}
+        </IconButton>
+      </div>
+    );
+  };
   const activeRules = rules.filter((r) => r.enabled).length;
   return (
     <div className="app-shell">
@@ -423,70 +495,34 @@ export default function App() {
           </IconButton>
         </div>
         <div className="session-list">
-          {sessions.map((s) => (
-            <div
-              className={`session-row ${session === s.id ? "selected" : ""}`}
-              key={s.id}
-            >
-              <button
-                title={s.name}
-                className={`session-item ${session === s.id ? "selected" : ""}`}
-                onClick={() => {
-                  useApp.setState({ session: s.id, selected: null });
-                  setHost("");
-                  useApp
-                    .getState()
-                    .loadFlows(s.id)
-                    .catch((e) => setError(e.message));
-                }}
-              >
-                <Layers size={14} />
-                <span>{s.name}</span>
-                {status?.session === s.id && <span className="tiny-dot" />}
-              </button>
-              <IconButton
-                title={`Переименовать: ${s.name}`}
-                onClick={() => setRenaming(s)}
-              >
-                <Pencil size={13} />
-              </IconButton>
-              <IconButton
-                title={`Удалить сессию: ${s.name}`}
-                disabled={status?.session === s.id || !!exporting}
-                onClick={() =>
-                  setConfirmation({
-                    title: "Удалить сессию?",
-                    text: `«${s.name}» и весь её трафик будут удалены.`,
-                    action: async () => {
-                      await api(`/sessions/${s.id}`, "DELETE");
-                      if (useApp.getState().session === s.id)
-                        useApp.setState({
-                          session: "",
-                          selected: null,
-                          flows: [],
-                        });
-                      setHost("");
-                      await refresh();
-                    },
-                  })
-                }
-              >
-                <Trash2 size={13} />
-              </IconButton>
-              <IconButton
-                title={`Экспортировать HAR: ${s.name}`}
-                disabled={!!exporting}
-                onClick={() => exportSession(s)}
-              >
-                {exporting === s.id ? (
-                  <LoaderCircle size={13} className="spin" />
-                ) : (
-                  <Download size={13} />
-                )}
-              </IconButton>
-            </div>
-          ))}
+          {sessions.filter((s) => !s.archived).map(renderSession)}
         </div>
+        <button
+          className={`archive-toggle ${viewingArchive ? "is-viewing" : ""}`}
+          aria-label="Архив сессий"
+          aria-expanded={archiveOpen}
+          aria-controls="archived-sessions"
+          onClick={() => setArchiveOpen(!archiveOpen)}
+        >
+          <Archive size={14} />
+          <span>Архив</span>
+          <span className="archive-count">{archivedSessions.length}</span>
+          {archiveOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        </button>
+        {archiveOpen && (
+          <div
+            id="archived-sessions"
+            className="session-list archive-session-list"
+            aria-label="Архивные сессии"
+          >
+            {archivedSessions.map(renderSession)}
+            {!archivedSessions.length && (
+              <p className="archive-empty">
+                Завершённые сессии появятся здесь.
+              </p>
+            )}
+          </div>
+        )}
         {page === "traffic" && (
           <>
             <div className="sidebar-section">
@@ -675,9 +711,21 @@ export default function App() {
                   Трафик{" "}
                   <span className="heading-count">{filtered.length}</span>
                 </h1>
-                <p>{host || "Запросы и ответы ваших приложений"}</p>
+                <p>
+                  {viewingArchive
+                    ? `Архив · ${sessions.find((s) => s.id === session)?.name}`
+                    : host || "Запросы и ответы ваших приложений"}
+                </p>
               </div>
               <div className="heading-actions">
+                {viewingArchive && status && (
+                  <button
+                    className="button subtle"
+                    onClick={() => openSession(status.session)}
+                  >
+                    <Layers size={14} />К текущей сессии
+                  </button>
+                )}
                 <span className="shortcut">
                   <Command size={12} /> K
                 </span>
@@ -742,6 +790,7 @@ export default function App() {
               flows={filtered}
               onRule={openEditor}
               onConnect={() => setConnect(true)}
+              archived={!!viewingArchive}
               onFocusHost={toggleHostFocus}
               focusedHosts={focusedHosts}
             />
@@ -915,7 +964,9 @@ function Traffic({
   onConnect,
   onFocusHost,
   focusedHosts,
+  archived = false,
 }: {
+  archived?: boolean;
   onFocusHost: (host: string) => void;
   focusedHosts: string[];
   flows: Flow[];
@@ -1074,15 +1125,18 @@ function Traffic({
             </div>
           ) : (
             <Empty
-              icon={Activity}
+              icon={archived ? Archive : Activity}
               title={
                 useApp.getState().flows.length
                   ? "Запросы не найдены"
-                  : status?.running
-                    ? "Ожидаем первый запрос"
-                    : "Ваш трафик начинается здесь"
+                  : archived
+                    ? "В сессии нет запросов"
+                    : status?.running
+                      ? "Ожидаем первый запрос"
+                      : "Ваш трафик начинается здесь"
               }
               action={
+                !archived &&
                 !useApp.getState().flows.length && (
                   <button className="button" onClick={onConnect}>
                     <Smartphone size={14} />
@@ -1093,9 +1147,11 @@ function Traffic({
             >
               {useApp.getState().flows.length
                 ? "Измените поиск или выбранные фильтры."
-                : status?.running
-                  ? "Откройте приложение на подключённом устройстве. Запросы появятся автоматически."
-                  : "Подключите телефон или настройте браузер, чтобы просматривать и изменять запросы."}
+                : archived
+                  ? "Сессия сохранена в архиве. Новые запросы записываются в текущую сессию."
+                  : status?.running
+                    ? "Откройте приложение на подключённом устройстве. Запросы появятся автоматически."
+                    : "Подключите телефон или настройте браузер, чтобы просматривать и изменять запросы."}
             </Empty>
           )}
         </div>

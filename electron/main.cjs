@@ -464,7 +464,8 @@ app.on("before-quit", (event) => {
     app.quit();
   };
   if (!backend || backend.exitCode !== null) return finish();
-  request("/capture/stop", "POST")
+  request("/sessions/close", "POST")
+    .then(() => request("/capture/stop", "POST"))
     .catch(() => {})
     .finally(finish);
   setTimeout(finish, 2500).unref();

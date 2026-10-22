@@ -115,6 +115,7 @@ export interface Session {
   id: string;
   name: string;
   created: number;
+  archived: boolean;
 }
 export interface BackendEvent {
   type: string;

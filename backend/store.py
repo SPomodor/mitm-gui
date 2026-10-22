@@ -15,18 +15,27 @@ class Store:
         self.db = sqlite3.connect(root / 'history.sqlite3')
         self.db.execute('PRAGMA journal_mode=WAL')
         self.db.execute('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, name TEXT, created REAL)')
+        if 'archived' not in {row[1] for row in self.db.execute('PRAGMA table_info(sessions)')}:
+            self.db.execute('ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0')
         self.db.execute('CREATE TABLE IF NOT EXISTS flows (id TEXT PRIMARY KEY, session TEXT, started REAL, summary TEXT, detail TEXT)')
         self.db.execute('CREATE INDEX IF NOT EXISTS flows_session ON flows(session, started)')
         self.db.commit()
         self.session = self.new_session()['id']
 
     def sessions(self):
-        return [dict(zip(('id', 'name', 'created'), row)) for row in self.db.execute('SELECT * FROM sessions ORDER BY created DESC')]
+        return [dict(id=row[0], name=row[1], created=row[2], archived=bool(row[3]))
+                for row in self.db.execute('SELECT id,name,created,archived FROM sessions ORDER BY created DESC')]
+
+    def archive_sessions(self):
+        self.db.execute('UPDATE sessions SET archived=1 WHERE archived=0')
+        self.db.commit()
 
     def new_session(self):
-        item = {'id': uuid.uuid4().hex, 'name': time.strftime('Session · %d %b %H:%M:%S'), 'created': time.time()}
-        self.db.execute('INSERT INTO sessions VALUES (:id,:name,:created)', item)
-        self.db.commit()
+        item = {'id': uuid.uuid4().hex, 'name': time.strftime('Session · %d %b %H:%M:%S'), 'created': time.time(), 'archived': False}
+        with self.db:
+            # Includes sessions left active by a crash or an older CHLS build.
+            self.db.execute('UPDATE sessions SET archived=1 WHERE archived=0')
+            self.db.execute('INSERT INTO sessions (id,name,created,archived) VALUES (:id,:name,:created,:archived)', item)
         self.session = item['id']
         return item
 
