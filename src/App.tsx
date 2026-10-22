@@ -30,6 +30,10 @@ import {
   Play,
   Plus,
   Search,
+  ShieldCheck,
+  ShieldOff,
+  Power,
+  Circle,
   Settings2,
   ShieldBan,
   SlidersHorizontal,
@@ -37,7 +41,6 @@ import {
   Square,
   Trash2,
   Upload,
-  Wifi,
   X,
 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -492,27 +495,37 @@ export default function App() {
           <>
             <div className="sidebar-section">
               <span>ХОСТЫ</span>
-              <button
-                className={`text-button ${focusOnly ? "accent" : ""}`}
-                aria-pressed={focusOnly}
-                onClick={() => {
-                  setFocusOnly(!focusOnly);
-                  setHost("");
-                }}
-                title="Показывать только хосты в фокусе; запись остальных продолжается"
-              >
-                Только фокус
-              </button>
               <span className="muted">{hosts.length}</span>
             </div>
-            <div className="host-list">
+            <div
+              className="host-mode segmented"
+              role="group"
+              aria-label="Отображение хостов"
+            >
               <button
-                className={`host-item ${!host ? "selected" : ""}`}
-                onClick={() => setHost("")}
+                aria-pressed={!focusOnly}
+                className={!focusOnly ? "selected" : ""}
+                onClick={() => {
+                  setFocusOnly(false);
+                  setHost("");
+                }}
               >
-                <Globe size={14} />
-                <span>Все хосты</span>
+                <Globe size={13} />
+                Все хосты
               </button>
+              <button
+                aria-pressed={focusOnly}
+                className={focusOnly ? "selected" : ""}
+                onClick={() => {
+                  setFocusOnly(true);
+                  setHost("");
+                }}
+              >
+                <Filter size={13} />В фокусе
+                <span className="focus-count">{focusedHosts.length}</span>
+              </button>
+            </div>
+            <div className="host-list">
               {[...new Set([...focusedHosts, ...hosts])]
                 .filter((h) => !focusOnly || focusedHosts.includes(h))
                 .map((h) => (
@@ -545,16 +558,38 @@ export default function App() {
           </>
         )}
         <div className="sidebar-bottom">
-          <div className="engine-state">
-            <span className={`status-dot ${status?.running ? "live" : ""}`} />
-            <span>
-              {!ready
-                ? "Запуск движка…"
-                : status?.running
-                  ? "Захват активен"
-                  : "Захват остановлен"}
+          <button
+            className={`capture-control ${status?.running ? "is-running" : ""}`}
+            disabled={!ready || busy}
+            onClick={capture}
+            aria-label={status?.running ? "Остановить" : "Начать захват"}
+            title={
+              status?.running
+                ? "Остановить перехват · Ctrl+Shift+R"
+                : "Начать перехват · Ctrl+Shift+R"
+            }
+          >
+            <span className="capture-control-icon">
+              {busy || !ready ? (
+                <LoaderCircle size={16} className="spin" />
+              ) : (
+                <Power size={16} />
+              )}
             </span>
-          </div>
+            <span className="capture-control-copy">
+              <strong>Перехват</strong>
+              <span>
+                {!ready
+                  ? "Запуск движка…"
+                  : busy
+                    ? "Переключение…"
+                    : status?.running
+                      ? "Активен"
+                      : "Остановлен"}
+              </span>
+            </span>
+            <span className={`status-dot ${status?.running ? "live" : ""}`} />
+          </button>
           <div className="bottom-meta">
             <span>mitmproxy 12</span>
             <select
@@ -583,13 +618,12 @@ export default function App() {
             </strong>
           </div>
           <div className="toolbar-actions">
-            <button className="button subtle" onClick={() => setConnect(true)}>
-              <Wifi size={15} />
-              Подключение
-            </button>
             <button
-              className={`button subtle ${status?.config.ssl_proxying !== false ? "accent" : ""}`}
+              className={`privacy-toggle ${status?.config.ssl_proxying !== false ? "enabled" : ""}`}
               disabled={!ready}
+              aria-label={
+                status?.config.ssl_proxying === false ? "SSL выкл" : "SSL вкл"
+              }
               aria-pressed={status?.config.ssl_proxying !== false}
               title="Расшифровка HTTPS. Изменение действует на новые TLS-соединения; переподключите приложение. Без расшифровки HTTPS-правила недоступны."
               onClick={() =>
@@ -599,32 +633,33 @@ export default function App() {
                 )
               }
             >
-              SSL {status?.config.ssl_proxying === false ? "выкл" : "вкл"}
+              {status?.config.ssl_proxying === false ? (
+                <ShieldOff size={18} />
+              ) : (
+                <ShieldCheck size={18} />
+              )}
             </button>
             <button
-              className={`button ${status?.recording ? "recording" : "subtle"}`}
+              className={`record-toggle ${status?.recording ? "is-recording" : ""}`}
               disabled={!ready}
+              aria-label={
+                status?.recording ? "Пауза записи" : "Включить запись"
+              }
               aria-pressed={!!status?.recording}
               title="Сохранение трафика в сессию. Прокси, WireGuard и правила продолжают работать. Уже записываемые запросы получат ответ."
               onClick={() => toggleSetting("/recording", !status?.recording)}
             >
-              {status?.recording ? <Pause size={13} /> : <Play size={13} />}{" "}
-              {status?.recording ? "Пауза записи" : "Включить запись"}
-            </button>
-            <span className="toolbar-divider" />
-            <button
-              className={`button ${status?.running ? "recording" : "primary"}`}
-              disabled={!ready || busy}
-              onClick={capture}
-            >
-              {busy ? (
-                <LoaderCircle className="spin" size={14} />
-              ) : status?.running ? (
-                <Square size={11} fill="currentColor" />
+              {status?.recording ? (
+                <Circle
+                  className="record-dot"
+                  size={11}
+                  fill="currentColor"
+                  strokeWidth={0}
+                />
               ) : (
-                <Play size={13} fill="currentColor" />
+                <Pause size={15} />
               )}
-              {status?.running ? "Остановить" : "Начать захват"}
+              <span>{status?.recording ? "Запись" : "На паузе"}</span>
             </button>
           </div>
         </header>

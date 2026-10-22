@@ -420,6 +420,97 @@ button .spin {
   gap: 7px;
   font-size: 12px;
 }
+.capture-control {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  text-align: left;
+  transition: background 140ms;
+}
+.capture-control:hover:not(:disabled) {
+  background: var(--hover);
+}
+.capture-control-icon {
+  color: var(--muted);
+  display: flex;
+}
+.capture-control.is-running .capture-control-icon {
+  color: var(--success);
+}
+.capture-control-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+.capture-control-copy strong {
+  font-weight: 500;
+}
+.capture-control-copy > span {
+  color: var(--muted);
+}
+.host-mode.segmented {
+  margin: 0 10px 8px;
+  display: flex;
+  padding: 3px;
+}
+.host-mode.segmented button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.focus-count {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.privacy-toggle {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  color: var(--muted);
+}
+.privacy-toggle.enabled {
+  color: var(--accent);
+}
+.privacy-toggle:hover:not(:disabled) {
+  background: var(--hover);
+}
+.record-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 32px;
+  min-width: 102px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+}
+.record-toggle:hover:not(:disabled) {
+  background: var(--hover);
+}
+.record-toggle.is-recording {
+  color: var(--text);
+}
+.record-dot {
+  color: var(--danger);
+}
 .status-dot {
   width: 6px;
   height: 6px;

@@ -129,13 +129,24 @@ async function unusedPort() {
     await expect(
       page.getByRole("button", { name: "Остановить", exact: true }),
     ).toBeEnabled({ timeout: 60000 });
+    await expect(page.locator(".topbar .toolbar-actions > button")).toHaveCount(
+      2,
+    );
+    await expect(
+      page.locator(".sidebar-bottom .capture-control"),
+    ).toHaveAttribute("aria-label", "Остановить");
+    await expect(page.locator(".record-toggle .record-dot")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "SSL вкл", exact: true }).locator("svg"),
+    ).toHaveCount(1);
     await page.locator(".bottom-meta select").selectOption("dark");
     await page.screenshot({
       animations: "disabled",
       path: path.join(output, "01-traffic.png"),
     });
     await page
-      .getByRole("button", { name: "Подключение", exact: true })
+      .getByRole("navigation")
+      .getByRole("button", { name: "Подключить устройство", exact: true })
       .click();
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(
@@ -246,21 +257,19 @@ async function unusedPort() {
       0,
     );
     await page.getByLabel("Фокус: api.example.test", { exact: true }).click();
-    await page
-      .getByRole("button", { name: "Только фокус", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^В фокусе/ }).click();
     await expect(page.locator(".flow-row")).toHaveCount(1);
     await page.getByLabel("Фокус: api.example.test", { exact: true }).click();
     await expect(page.locator(".flow-row")).toHaveCount(0);
-    await page
-      .getByRole("button", { name: "Только фокус", exact: true })
-      .click();
+    await page.getByRole("button", { name: "Все хосты", exact: true }).click();
     await page
       .getByRole("button", { name: "Пауза записи", exact: true })
       .click();
     await expect(
       page.getByRole("button", { name: "Включить запись", exact: true }),
     ).toBeVisible();
+    await expect(page.locator(".record-toggle .record-dot")).toHaveCount(0);
+    await expect(page.locator(".record-toggle")).toHaveText("На паузе");
     await fetchProxy(url + "?not-recorded=1");
     const saved = await page.evaluate(() => window.chls.api("/flows"));
     if (saved.length !== 1)
