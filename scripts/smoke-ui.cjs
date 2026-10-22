@@ -111,6 +111,27 @@ async function unusedPort() {
   let upstream;
   try {
     const page = await application.firstWindow();
+    async function dragSeparator(label, delta, axis = "x") {
+      const separator = page.getByRole("separator", {
+        name: label,
+        exact: true,
+      });
+      const box = await separator.boundingBox();
+      if (!box) throw new Error("Missing resize handle: " + label);
+      const x = box.x + box.width / 2,
+        y = box.y + box.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(
+        x + (axis === "x" ? delta : 0),
+        y + (axis === "y" ? delta : 0),
+        { steps: 6 },
+      );
+      await page.mouse.up();
+      await expect(page.locator("html")).not.toHaveAttribute(
+        "data-resize-axis",
+      );
+    }
     page.on("pageerror", (e) => errors.push(e.message));
     async function openEditor(action) {
       const opened = page.context().waitForEvent("page");
@@ -131,6 +152,62 @@ async function unusedPort() {
     await expect(
       page.getByRole("button", { name: "Остановить", exact: true }),
     ).toBeEnabled({ timeout: 60000 });
+    const sidebarWidth = await page
+      .locator(".sidebar")
+      .evaluate((el) => el.getBoundingClientRect().width);
+    await dragSeparator("Ширина боковой панели", 64);
+    await expect
+      .poll(() =>
+        page
+          .locator(".sidebar")
+          .evaluate((el) => Math.round(el.getBoundingClientRect().width)),
+      )
+      .toBe(Math.round(sidebarWidth + 64));
+    const sessionsHeight = await page
+      .locator(".sidebar-sessions")
+      .evaluate((el) => el.getBoundingClientRect().height);
+    await dragSeparator("Высота разделов сессий и хостов", 24, "y");
+    await expect
+      .poll(() =>
+        page
+          .locator(".sidebar-sessions")
+          .evaluate((el) => Math.round(el.getBoundingClientRect().height)),
+      )
+      .toBe(Math.round(sessionsHeight + 24));
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: "Остановить", exact: true }),
+    ).toBeEnabled();
+    await expect
+      .poll(() =>
+        page
+          .locator(".sidebar")
+          .evaluate((el) => Math.round(el.getBoundingClientRect().width)),
+      )
+      .toBe(Math.round(sidebarWidth + 64));
+    await expect
+      .poll(() =>
+        page
+          .locator(".sidebar-sessions")
+          .evaluate((el) => Math.round(el.getBoundingClientRect().height)),
+      )
+      .toBe(Math.round(sessionsHeight + 24));
+    await page
+      .getByRole("separator", { name: "Ширина боковой панели", exact: true })
+      .dblclick();
+    await page
+      .getByRole("separator", {
+        name: "Высота разделов сессий и хостов",
+        exact: true,
+      })
+      .dblclick();
+    await expect
+      .poll(() =>
+        page
+          .locator(".sidebar")
+          .evaluate((el) => Math.round(el.getBoundingClientRect().width)),
+      )
+      .toBe(230);
     await expect(page.locator(".topbar .toolbar-actions > button")).toHaveCount(
       2,
     );
@@ -262,6 +339,72 @@ async function unusedPort() {
       "api.example.test",
     );
     await expect(page.locator(".code-view")).toContainText("CHLS");
+    const trafficWidth = await page
+      .locator(".traffic-list")
+      .evaluate((el) => el.getBoundingClientRect().width);
+    await dragSeparator("Ширина списка запросов и инспектора", -80);
+    await expect
+      .poll(() =>
+        page
+          .locator(".traffic-list")
+          .evaluate((el) => Math.round(el.getBoundingClientRect().width)),
+      )
+      .toBe(Math.round(trafficWidth - 80));
+    await page
+      .getByRole("separator", {
+        name: "Ширина списка запросов и инспектора",
+        exact: true,
+      })
+      .press("ArrowRight");
+    await expect
+      .poll(() =>
+        page
+          .locator(".traffic-list")
+          .evaluate((el) => Math.round(el.getBoundingClientRect().width)),
+      )
+      .toBe(Math.round(trafficWidth - 64));
+    await page.screenshot({
+      animations: "disabled",
+      path: path.join(output, "14-resized-panes.png"),
+    });
+    await page.reload();
+    await expect(page.locator(".flow-row").first()).toBeVisible();
+    await page.locator(".flow-row").first().click();
+    await expect(page.locator(".code-view")).toContainText("CHLS");
+    await expect
+      .poll(() =>
+        page
+          .locator(".traffic-list")
+          .evaluate((el) => Math.round(el.getBoundingClientRect().width)),
+      )
+      .toBe(Math.round(trafficWidth - 64));
+    await page
+      .getByRole("separator", {
+        name: "Ширина списка запросов и инспектора",
+        exact: true,
+      })
+      .dblclick();
+    const trafficHandle = page.getByRole("separator", {
+      name: "Ширина списка запросов и инспектора",
+      exact: true,
+    });
+    await trafficHandle.press("Home");
+    await expect
+      .poll(() =>
+        page
+          .locator(".traffic-list")
+          .evaluate((el) => Math.round(el.getBoundingClientRect().width)),
+      )
+      .toBe(340);
+    await trafficHandle.press("End");
+    await expect
+      .poll(() =>
+        page
+          .locator(".inspector")
+          .evaluate((el) => Math.round(el.getBoundingClientRect().width)),
+      )
+      .toBe(300);
+    await trafficHandle.dblclick();
     await page.keyboard.press("Control+f");
     await expect(
       page.getByLabel("Найти в теле", { exact: true }),
@@ -523,6 +666,16 @@ async function unusedPort() {
             .evaluate((element) => element.querySelectorAll("*").length);
           if (matchedNodes > 5000)
             throw new Error("Search rendered offscreen matches");
+          await dragSeparator("Ширина списка запросов и инспектора", 24);
+          await expect(
+            page.locator("mark[data-current=true]").first(),
+          ).toBeInViewport();
+          await page
+            .getByRole("separator", {
+              name: "Ширина списка запросов и инспектора",
+              exact: true,
+            })
+            .dblclick();
           await page
             .getByLabel("Найти в теле", { exact: true })
             .press("Escape");
@@ -720,6 +873,9 @@ async function unusedPort() {
     await page
       .getByRole("button", { name: "Включить сценарий", exact: true })
       .click();
+    await expect(
+      page.getByRole("button", { name: "Выключить сценарий", exact: true }),
+    ).toBeEnabled();
     const mockUrl = `http://127.0.0.1:${originPort}/driver/demo/order`;
     if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "assembling")
       throw new Error("Demo mock did not intercept request");
@@ -740,6 +896,24 @@ async function unusedPort() {
     if ((await fetchProxy(mockUrl + "/unhandled")).status !== 501)
       throw new Error("Strict mock scope did not block unmatched request");
     const originalSource = await page.getByLabel("Код сценария").inputValue();
+    const editorWidth = await page
+      .locator(".mock-editor-pane")
+      .evaluate((el) => el.getBoundingClientRect().width);
+    await dragSeparator("Ширина редактора сценария и журнала", -40);
+    await expect
+      .poll(() =>
+        page
+          .locator(".mock-editor-pane")
+          .evaluate((el) => Math.round(el.getBoundingClientRect().width)),
+      )
+      .toBe(Math.round(editorWidth - 40));
+    await expect(page.getByLabel("Код сценария")).toHaveValue(originalSource);
+    await page
+      .getByRole("separator", {
+        name: "Ширина редактора сценария и журнала",
+        exact: true,
+      })
+      .dblclick();
     await page
       .getByLabel("Код сценария")
       .fill(originalSource + "\nневерная команда");
@@ -755,6 +929,9 @@ async function unusedPort() {
     await page
       .getByRole("button", { name: "Сбросить этап", exact: true })
       .click();
+    await expect(
+      page.getByRole("button", { name: "Собирается", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
     if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "assembling")
       throw new Error("Mock reset failed");
     await page.getByLabel("Режим сценария").selectOption("scenario");
@@ -824,6 +1001,9 @@ async function unusedPort() {
     await page
       .getByRole("button", { name: "Выключить сценарий", exact: true })
       .click();
+    await expect(
+      page.getByRole("button", { name: "Включить сценарий", exact: true }),
+    ).toBeEnabled();
     if (JSON.parse((await fetchProxy(mockUrl)).text).app !== "CHLS")
       throw new Error("Normal proxy did not resume after disabling mock");
     await page
@@ -974,6 +1154,8 @@ async function unusedPort() {
           "wireguard QR",
           "real capture",
           "inspector",
+          "resize sidebar, traffic inspector, scenario log and session/host heights",
+          "persist layout across reload, keyboard resizing and double-click reset",
           ...(process.env.CHLS_SMOKE_LARGE_BODY === "1"
             ? [
                 "virtualized 10k-line JSON, gzip truncated JSON, long unterminated string",

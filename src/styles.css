@@ -1,4 +1,129 @@
 @import "tailwindcss";
+.pane-separator {
+  position: relative;
+  flex-shrink: 0;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+  z-index: 2;
+  outline: none;
+}
+.pane-separator::after {
+  content: "";
+  position: absolute;
+  background: var(--line);
+  pointer-events: none;
+  transition: background 140ms;
+}
+.pane-separator-x {
+  width: 6px;
+  flex-basis: 6px;
+  cursor: col-resize;
+  align-self: stretch;
+}
+.pane-separator-x::after {
+  left: 2px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+.pane-separator-y {
+  height: 6px;
+  flex-basis: 6px;
+  cursor: row-resize;
+}
+.pane-separator-y::after {
+  left: 0;
+  right: 0;
+  top: 2px;
+  height: 1px;
+}
+.pane-separator:hover,
+.pane-separator:focus-visible {
+  background: var(--selected);
+}
+.pane-separator:hover::after,
+.pane-separator:focus-visible::after {
+  background: var(--accent);
+}
+.pane-separator:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+html[data-resize-axis] * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+html[data-resize-axis="x"] * {
+  cursor: col-resize !important;
+}
+html[data-resize-axis="y"] * {
+  cursor: row-resize !important;
+}
+.app-shell > .sidebar {
+  border-right: 0;
+}
+.sidebar > .brand,
+.sidebar > nav,
+.sidebar > .workspace-label,
+.sidebar > .sidebar-bottom {
+  flex-shrink: 0;
+}
+.sidebar-panes {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.sidebar-sessions {
+  flex-shrink: 0;
+  min-height: 0;
+  overflow: auto;
+}
+.sidebar-sessions .session-list {
+  max-height: none;
+  overflow: visible;
+}
+.sidebar-hosts {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.sidebar-hosts .sidebar-section {
+  flex-shrink: 0;
+  padding-top: 12px;
+  height: 40px;
+}
+.sidebar-hosts .host-mode {
+  flex-shrink: 0;
+}
+.sidebar-hosts .host-list {
+  flex: 1;
+  min-height: 0;
+}
+.traffic-workspace > .traffic-list {
+  container-type: inline-size;
+  overflow: hidden;
+}
+.traffic-workspace > .inspector {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  max-width: none;
+  border-left: 0;
+}
+.mock-workspace > .mock-log-pane {
+  border-left: 0;
+}
+@container (max-width: 440px) {
+  .traffic-workspace .traffic-row {
+    grid-template-columns: 55px minmax(90px, 1fr) 43px 55px 55px;
+    gap: 5px;
+    padding: 0 10px;
+  }
+}
 .host-focus-row {
   display: flex;
   align-items: center;

@@ -10,6 +10,7 @@ import {
   Upload,
 } from "lucide-react";
 import { api } from "./store";
+import { PaneSeparator, usePaneResize } from "./PaneResize";
 
 interface MockDocument {
   source: string;
@@ -95,6 +96,12 @@ export default function Mocks({
 }: {
   onEnabledChange: (enabled: boolean) => void;
 }) {
+  const workspaceSize = usePaneResize("scenarios-v1", {
+    initial: 0.72,
+    min: 360,
+    otherMin: 220,
+    ratio: true,
+  });
   const [status, setStatus] = useState<MockStatus | null>(null);
   const [draft, setDraft] = useState<MockDocument>(empty);
   const [hostText, setHostText] = useState("");
@@ -256,7 +263,13 @@ export default function Mocks({
           </div>
         )}
       </div>
-      <div className="mock-workspace">
+      <div
+        className="mock-workspace"
+        ref={workspaceSize.containerRef}
+        style={{
+          gridTemplateColumns: `${workspaceSize.size}px 6px minmax(0, 1fr)`,
+        }}
+      >
         <div className="mock-editor-pane">
           <div className="mock-editor-toolbar">
             <strong>
@@ -475,6 +488,10 @@ export default function Mocks({
             </button>
           </div>
         </div>
+        <PaneSeparator
+          label="Ширина редактора сценария и журнала"
+          pane={workspaceSize}
+        />
         <aside className="mock-log-pane">
           <div className="mock-editor-toolbar">
             <strong>

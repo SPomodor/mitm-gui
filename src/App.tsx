@@ -50,6 +50,7 @@ import { api, newRule, useApp } from "./store";
 import RewriteFields, { editableRule, requestActions } from "./RewriteFields";
 import Mocks from "./Mocks";
 import SearchBody from "./SearchBody";
+import { PaneSeparator, usePaneResize } from "./PaneResize";
 import { splitRuleLocation } from "./ruleLocation";
 import packageInfo from "../package.json";
 import type {
@@ -209,6 +210,18 @@ export default function App() {
     session,
   } = useApp();
   const [page, setPage] = useState<"traffic" | "rules" | "mocks">("traffic");
+  const sidebarSize = usePaneResize("sidebar-v1", {
+    initial: 230,
+    min: 200,
+    otherMin: 660,
+    max: 460,
+  });
+  const sidebarSections = usePaneResize("sidebar-sections-v1", {
+    initial: 160,
+    min: 120,
+    otherMin: 110,
+    axis: "y",
+  });
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [renaming, setRenaming] = useState<Session | null>(null);
   const [confirmation, setConfirmation] = useState<{
@@ -449,8 +462,8 @@ export default function App() {
   };
   const activeRules = rules.filter((r) => r.enabled).length;
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className="app-shell" ref={sidebarSize.containerRef}>
+      <aside className="sidebar" style={{ width: sidebarSize.size }}>
         <div className="brand drag">
           <span className="brand-mark">
             <Network size={18} />
@@ -488,107 +501,127 @@ export default function App() {
             Подключить устройство
           </button>
         </nav>
-        <div className="sidebar-section">
-          <span>СЕССИИ</span>
-          <IconButton title="Новая сессия" onClick={newSession}>
-            <Plus size={14} />
-          </IconButton>
-        </div>
-        <div className="session-list">
-          {sessions.filter((s) => !s.archived).map(renderSession)}
-        </div>
-        <button
-          className={`archive-toggle ${viewingArchive ? "is-viewing" : ""}`}
-          aria-label="Архив сессий"
-          aria-expanded={archiveOpen}
-          aria-controls="archived-sessions"
-          onClick={() => setArchiveOpen(!archiveOpen)}
-        >
-          <Archive size={14} />
-          <span>Архив</span>
-          <span className="archive-count">{archivedSessions.length}</span>
-          {archiveOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        </button>
-        {archiveOpen && (
+        <div className="sidebar-panes" ref={sidebarSections.containerRef}>
           <div
-            id="archived-sessions"
-            className="session-list archive-session-list"
-            aria-label="Архивные сессии"
+            className="sidebar-sessions"
+            style={{
+              flexBasis: page === "traffic" ? sidebarSections.size : undefined,
+              flexGrow: page === "traffic" ? 0 : 1,
+            }}
           >
-            {archivedSessions.map(renderSession)}
-            {!archivedSessions.length && (
-              <p className="archive-empty">
-                Завершённые сессии появятся здесь.
-              </p>
+            <div className="sidebar-section">
+              <span>СЕССИИ</span>
+              <IconButton title="Новая сессия" onClick={newSession}>
+                <Plus size={14} />
+              </IconButton>
+            </div>
+            <div className="session-list">
+              {sessions.filter((s) => !s.archived).map(renderSession)}
+            </div>
+            <button
+              className={`archive-toggle ${viewingArchive ? "is-viewing" : ""}`}
+              aria-label="Архив сессий"
+              aria-expanded={archiveOpen}
+              aria-controls="archived-sessions"
+              onClick={() => setArchiveOpen(!archiveOpen)}
+            >
+              <Archive size={14} />
+              <span>Архив</span>
+              <span className="archive-count">{archivedSessions.length}</span>
+              {archiveOpen ? (
+                <ChevronDown size={13} />
+              ) : (
+                <ChevronRight size={13} />
+              )}
+            </button>
+            {archiveOpen && (
+              <div
+                id="archived-sessions"
+                className="session-list archive-session-list"
+                aria-label="Архивные сессии"
+              >
+                {archivedSessions.map(renderSession)}
+                {!archivedSessions.length && (
+                  <p className="archive-empty">
+                    Завершённые сессии появятся здесь.
+                  </p>
+                )}
+              </div>
             )}
           </div>
-        )}
-        {page === "traffic" && (
-          <>
-            <div className="sidebar-section">
-              <span>ХОСТЫ</span>
-              <span className="muted">{hosts.length}</span>
-            </div>
-            <div
-              className="host-mode segmented"
-              role="group"
-              aria-label="Отображение хостов"
-            >
-              <button
-                aria-pressed={!focusOnly}
-                className={!focusOnly ? "selected" : ""}
-                onClick={() => {
-                  setFocusOnly(false);
-                  setHost("");
-                }}
-              >
-                <Globe size={13} />
-                Все хосты
-              </button>
-              <button
-                aria-pressed={focusOnly}
-                className={focusOnly ? "selected" : ""}
-                onClick={() => {
-                  setFocusOnly(true);
-                  setHost("");
-                }}
-              >
-                <Filter size={13} />В фокусе
-                <span className="focus-count">{focusedHosts.length}</span>
-              </button>
-            </div>
-            <div className="host-list">
-              {[...new Set([...focusedHosts, ...hosts])]
-                .filter((h) => !focusOnly || focusedHosts.includes(h))
-                .map((h) => (
-                  <div className="host-focus-row" key={h}>
-                    <button
-                      className={`host-item ${host === h ? "selected" : ""}`}
-                      title={h}
-                      onClick={() => setHost(h)}
-                    >
-                      <ChevronRight size={12} />
-                      <span>{h}</span>
-                    </button>
-                    <button
-                      className={`icon-button ${focusedHosts.includes(h) ? "accent" : ""}`}
-                      aria-label={`Фокус: ${h}`}
-                      aria-pressed={focusedHosts.includes(h)}
-                      title="Добавить или убрать хост из фокуса"
-                      onClick={() => toggleHostFocus(h)}
-                    >
-                      <Filter size={13} />
-                    </button>
-                  </div>
-                ))}
-              {focusOnly && !focusedHosts.length && (
-                <p className="padded muted">
-                  Добавьте хост в фокус кнопкой рядом с его именем.
-                </p>
-              )}
-            </div>
-          </>
-        )}
+          {page === "traffic" && (
+            <>
+              <PaneSeparator
+                label="Высота разделов сессий и хостов"
+                pane={sidebarSections}
+              />
+              <div className="sidebar-hosts">
+                <div className="sidebar-section">
+                  <span>ХОСТЫ</span>
+                  <span className="muted">{hosts.length}</span>
+                </div>
+                <div
+                  className="host-mode segmented"
+                  role="group"
+                  aria-label="Отображение хостов"
+                >
+                  <button
+                    aria-pressed={!focusOnly}
+                    className={!focusOnly ? "selected" : ""}
+                    onClick={() => {
+                      setFocusOnly(false);
+                      setHost("");
+                    }}
+                  >
+                    <Globe size={13} />
+                    Все хосты
+                  </button>
+                  <button
+                    aria-pressed={focusOnly}
+                    className={focusOnly ? "selected" : ""}
+                    onClick={() => {
+                      setFocusOnly(true);
+                      setHost("");
+                    }}
+                  >
+                    <Filter size={13} />В фокусе
+                    <span className="focus-count">{focusedHosts.length}</span>
+                  </button>
+                </div>
+                <div className="host-list">
+                  {[...new Set([...focusedHosts, ...hosts])]
+                    .filter((h) => !focusOnly || focusedHosts.includes(h))
+                    .map((h) => (
+                      <div className="host-focus-row" key={h}>
+                        <button
+                          className={`host-item ${host === h ? "selected" : ""}`}
+                          title={h}
+                          onClick={() => setHost(h)}
+                        >
+                          <ChevronRight size={12} />
+                          <span>{h}</span>
+                        </button>
+                        <button
+                          className={`icon-button ${focusedHosts.includes(h) ? "accent" : ""}`}
+                          aria-label={`Фокус: ${h}`}
+                          aria-pressed={focusedHosts.includes(h)}
+                          title="Добавить или убрать хост из фокуса"
+                          onClick={() => toggleHostFocus(h)}
+                        >
+                          <Filter size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  {focusOnly && !focusedHosts.length && (
+                    <p className="padded muted">
+                      Добавьте хост в фокус кнопкой рядом с его именем.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
         <div className="sidebar-bottom">
           <button
             className={`capture-control ${status?.running ? "is-running" : ""}`}
@@ -636,6 +669,7 @@ export default function App() {
           </div>
         </div>
       </aside>
+      <PaneSeparator label="Ширина боковой панели" pane={sidebarSize} />
       <main className="main">
         <header className="topbar">
           <div className="breadcrumbs">
@@ -974,6 +1008,13 @@ function Traffic({
   onConnect: () => void;
 }) {
   const { selected, setSelected, status } = useApp();
+  const trafficSize = usePaneResize("traffic-v1", {
+    initial: 0.6,
+    min: 340,
+    otherMin: 300,
+    ratio: true,
+  });
+  const hasInspector = !!selected || flows.length > 0;
   const [detail, setDetail] = useState<Detail | null>(null),
     [loading, setLoading] = useState(false),
     [detailError, setDetailError] = useState("");
@@ -1025,10 +1066,11 @@ function Traffic({
     };
   }, [context]);
   return (
-    <div className="traffic-workspace">
+    <div className="traffic-workspace" ref={trafficSize.containerRef}>
       <section
         className={`traffic-list ${selected ? "with-inspector" : ""}`}
         aria-label="Запросы"
+        style={{ flex: hasInspector ? `0 0 ${trafficSize.size}px` : 1 }}
       >
         <div className="table-head traffic-row">
           <span>Метод</span>
@@ -1160,6 +1202,12 @@ function Traffic({
           <span>Последние сверху</span>
         </div>
       </section>
+      {hasInspector && (
+        <PaneSeparator
+          label="Ширина списка запросов и инспектора"
+          pane={trafficSize}
+        />
+      )}
       {selected && (
         <section className="inspector" aria-label="Инспектор запроса">
           <div className="inspector-heading">
