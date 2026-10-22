@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowDown,
@@ -79,13 +79,6 @@ const size = (n: number) =>
       : `${(n / 1048576).toFixed(1)} MB`;
 const time = (n: number) =>
   new Date(n * 1000).toLocaleTimeString("ru-RU", { hour12: false });
-function pretty(text: string) {
-  try {
-    return JSON.stringify(JSON.parse(text), null, 2);
-  } catch {
-    return text;
-  }
-}
 function IconButton({
   title,
   children,
@@ -287,9 +280,12 @@ export default function App() {
   );
   const searchRef = useRef<HTMLInputElement>(null);
   const closeConnect = useMemo(() => () => setConnect(false), []);
-  const openEditor = (rule: Rule) => {
-    window.chls.openRuleEditor(rule).catch((e) => setError(e.message));
-  };
+  const openEditor = useCallback(
+    (rule: Rule) => {
+      window.chls.openRuleEditor(rule).catch((e) => setError(e.message));
+    },
+    [setError],
+  );
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("chls-theme", theme);
@@ -1127,7 +1123,7 @@ function Traffic({
               <LoaderCircle size={20} className="spin" />
             </div>
           ) : detail ? (
-            <Inspector detail={detail} onRule={onRule} />
+            <MemoInspector detail={detail} onRule={onRule} />
           ) : (
             <div className="inline-error">{detailError}</div>
           )}
@@ -1420,9 +1416,7 @@ function Inspector({
                   Показаны первые 256 KB. Полное тело можно сохранить.
                 </div>
               )}
-              <SearchBody text={format ? pretty(message.text) : message.text}>
-                <Code text={format ? pretty(message.text) : message.text} />
-              </SearchBody>
+              <SearchBody rawText={message.text} format={format} />
             </>
           )}
         </>
@@ -1430,44 +1424,7 @@ function Inspector({
     </>
   );
 }
-function Code({ text }: { text: string }) {
-  const lines = text.split("\n");
-  return (
-    <div className="code-view">
-      {text ? (
-        lines.map((line, i) => (
-          <div className="code-line" key={i}>
-            <span className="line-number">{i + 1}</span>
-            <code>
-              {line
-                .split(
-                  /("(?:[^"\\]|\\.)*"\s*:|"(?:[^"\\]|\\.)*"|\b(?:true|false|null)\b|\b-?\d+(?:\.\d+)?\b)/g,
-                )
-                .map((part, j) => (
-                  <span
-                    className={
-                      part.endsWith(":")
-                        ? "token-key"
-                        : part.startsWith('"')
-                          ? "token-string"
-                          : /^(true|false|null|-?\d)/.test(part)
-                            ? "token-value"
-                            : ""
-                    }
-                    key={j}
-                  >
-                    {part}
-                  </span>
-                ))}
-            </code>
-          </div>
-        ))
-      ) : (
-        <span className="muted padded">Пустое тело</span>
-      )}
-    </div>
-  );
-}
+const MemoInspector = memo(Inspector);
 
 function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
   const { rules, saveRules, setError } = useApp();

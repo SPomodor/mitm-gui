@@ -998,6 +998,27 @@ button .spin {
   white-space: pre;
   padding-right: 20px;
 }
+.virtual-code {
+  min-height: 0;
+  padding: 12px 0;
+  font-family: Consolas, "SFMono-Regular", monospace;
+  overflow-anchor: none;
+}
+.virtual-code-content {
+  position: relative;
+  min-width: 100%;
+}
+.virtual-code-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  line-height: 23px;
+}
+.virtual-code-row code {
+  font: inherit;
+  white-space: pre;
+}
 .token-key {
   color: var(--code-key);
 }

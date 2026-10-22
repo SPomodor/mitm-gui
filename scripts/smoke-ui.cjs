@@ -5,6 +5,7 @@ const fs = require("node:fs/promises");
 const http = require("node:http");
 const net = require("node:net");
 const dgram = require("node:dgram");
+const { gzipSync } = require("node:zlib");
 const { version } = require("../package.json");
 
 async function unusedPort() {
@@ -19,6 +20,7 @@ async function unusedPort() {
   const output = path.resolve("build/ui-smoke");
   await fs.mkdir(output, { recursive: true });
   const errors = [];
+  const bodyPerformance = [];
   const proxyPort = await unusedPort();
   const udp = dgram.createSocket("udp4");
   await new Promise((resolve, reject) => {
@@ -190,6 +192,27 @@ async function unusedPort() {
     await page.getByRole("button", { name: "Закрыть", exact: true }).click();
     upstream = http.createServer((req, res) => {
       res.setHeader("Content-Type", "application/json");
+      if (req.url.startsWith("/large-")) {
+        const complete = JSON.stringify({
+          items: Array.from({ length: 1800 }, (_, i) => ({
+            index: i,
+            name: `item-${i}`,
+            enabled: false,
+            payload: "abcdefghijklmnopqrstuvwx",
+          })),
+          tail: "TAIL-SENTINEL",
+        });
+        const content = req.url.startsWith("/large-truncated")
+          ? complete.repeat(4)
+          : req.url.startsWith("/large-string")
+            ? JSON.stringify({ value: "x".repeat(300000) })
+            : complete;
+        if (req.url.startsWith("/large-truncated")) {
+          res.setHeader("Content-Encoding", "gzip");
+          res.end(gzipSync(content));
+        } else res.end(content);
+        return;
+      }
       res.end(
         JSON.stringify({
           app: "CHLS",
@@ -419,6 +442,115 @@ async function unusedPort() {
       .getByRole("navigation")
       .getByRole("button", { name: /^Трафик/ })
       .click();
+    // Large-body checks are performed on real saved, decoded proxy traffic.
+    if (process.env.CHLS_SMOKE_LARGE_BODY === "1") {
+      for (const endpoint of [
+        "/large-json",
+        "/large-truncated",
+        "/large-string",
+      ]) {
+        await fetchProxy(`http://127.0.0.1:${originPort}${endpoint}`);
+        await expect(page.locator(".flow-row").first()).toContainText(endpoint);
+        const started = Date.now();
+        await page.locator(".flow-row").first().click();
+        await expect(page.locator(".full-url")).toContainText(endpoint);
+        await expect(page.locator(".virtual-code-row").first()).toBeVisible();
+        const stats = await page
+          .locator(".virtual-code")
+          .evaluate((element) => ({
+            rows: Number(element.dataset.totalRows),
+            mounted: element.querySelectorAll(".virtual-code-row").length,
+            nodes: element.querySelectorAll("*").length,
+          }));
+        if (stats.rows < 1000 || stats.mounted > 100 || stats.nodes > 5000)
+          throw new Error(`Unbounded body DOM: ${JSON.stringify(stats)}`);
+        await page
+          .getByRole("button", { name: "Headers", exact: true })
+          .click();
+        await page.getByRole("button", { name: "Body", exact: true }).click();
+        await page.getByRole("button", { name: "Pretty", exact: true }).click();
+        await expect(page.locator(".virtual-code-row").first()).toBeVisible();
+        if (endpoint === "/large-json") {
+          await page.keyboard.press("Control+f");
+          await page
+            .getByLabel("Найти в теле", { exact: true })
+            .fill("TAIL-SENTINEL");
+          await expect(page.locator("mark[data-current=true]")).toContainText(
+            "TAIL-SENTINEL",
+          );
+          await expect(
+            page.locator("mark[data-current=true]"),
+          ).toBeInViewport();
+          await page.getByLabel("Найти в теле", { exact: true }).fill("item-");
+          await expect(page.locator(".body-search [role=status]")).toHaveText(
+            "1/1800",
+          );
+          await page
+            .getByLabel("Найти в теле", { exact: true })
+            .press("Shift+Enter");
+          await expect(page.locator(".body-search [role=status]")).toHaveText(
+            "1800/1800",
+          );
+          await expect(
+            page.locator("mark[data-current=true]"),
+          ).toBeInViewport();
+          const matchedNodes = await page
+            .locator(".virtual-code")
+            .evaluate((element) => element.querySelectorAll("*").length);
+          if (matchedNodes > 5000)
+            throw new Error("Search rendered offscreen matches");
+          await page
+            .getByLabel("Найти в теле", { exact: true })
+            .press("Escape");
+        }
+        if (endpoint === "/large-string") {
+          await page.keyboard.press("Control+f");
+          await page
+            .getByLabel("Найти в теле", { exact: true })
+            .fill("x".repeat(200));
+          await expect(page.locator(".body-search [role=status]")).toHaveText(
+            "1/1310",
+          );
+          await page
+            .getByLabel("Найти в теле", { exact: true })
+            .press("Shift+Enter");
+          await expect(page.locator(".body-search [role=status]")).toHaveText(
+            "1310/1310",
+          );
+          await expect(
+            page.locator("mark[data-current=true]").first(),
+          ).toBeInViewport();
+          await page
+            .getByLabel("Найти в теле", { exact: true })
+            .press("Escape");
+        }
+        await page.locator(".virtual-code").evaluate((element) => {
+          element.scrollTop = element.scrollHeight;
+        });
+        await expect
+          .poll(() =>
+            page.locator(".virtual-code .code-line").last().innerText(),
+          )
+          .not.toBe("");
+        bodyPerformance.push({
+          endpoint,
+          ...stats,
+          interactionMs: Date.now() - started,
+        });
+      }
+      await page.screenshot({
+        animations: "disabled",
+        path: path.join(output, "11-large-body.png"),
+      });
+      await fetchProxy(url);
+      await expect(page.locator(".flow-row").first()).toContainText(
+        "/api/config",
+      );
+      await fs.writeFile(
+        path.join(output, "large-body-metrics.json"),
+        JSON.stringify(bodyPerformance, null, 2),
+      );
+    }
     await expect(page.locator(".flow-row").first()).toContainText("debug=yes");
     await page.locator(".flow-row").first().click({ button: "right" });
     editor = await openEditor(() =>
@@ -767,6 +899,12 @@ async function unusedPort() {
           "wireguard QR",
           "real capture",
           "inspector",
+          ...(process.env.CHLS_SMOKE_LARGE_BODY === "1"
+            ? [
+                "virtualized 10k-line JSON, gzip truncated JSON, long unterminated string",
+                "offscreen and cross-fragment search with bounded DOM",
+              ]
+            : []),
           "Ctrl+F in response and request JSON, highlights, next/previous, no match, Escape",
           "Ctrl+F opens body search from Headers",
           "host focus filters display without dropping capture",
@@ -805,6 +943,7 @@ async function unusedPort() {
             : []),
         ],
         rendererErrors: errors,
+        bodyPerformance,
       }),
     );
   } finally {

@@ -1,18 +1,26 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Search, X } from "lucide-react";
+import VirtualCode from "./VirtualCode";
 
-export default function SearchBody({
-  text,
-  children,
+export default memo(function SearchBody({
+  rawText,
+  format,
 }: {
-  text: string;
-  children: React.ReactNode;
+  rawText: string;
+  format: boolean;
 }) {
+  const formatted = useMemo(() => {
+    try {
+      return JSON.stringify(JSON.parse(rawText), null, 2);
+    } catch {
+      return rawText;
+    }
+  }, [rawText]);
+  const text = format ? formatted : rawText;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [current, setCurrent] = useState(0);
   const input = useRef<HTMLInputElement>(null);
-  const body = useRef<HTMLDivElement>(null);
   const matches = useMemo(() => {
     const result: number[] = [];
     if (!query) return result;
@@ -39,35 +47,10 @@ export default function SearchBody({
     window.addEventListener("chls-find-body", find);
     return () => window.removeEventListener("chls-find-body", find);
   }, []);
-  useEffect(() => {
-    body.current
-      ?.querySelector('[data-current="true"]')
-      ?.scrollIntoView({ block: "center", inline: "nearest" });
-  }, [index, query, text]);
   const move = (delta: number) =>
     setCurrent((value) =>
       matches.length ? (value + delta + matches.length) % matches.length : 0,
     );
-  const pieces = useMemo(() => {
-    if (!open || !matches.length) return text || "Пустое тело";
-    let start = 0;
-    const result: React.ReactNode[] = [];
-    matches.forEach((offset, i) => {
-      result.push(text.slice(start, offset));
-      result.push(
-        <mark
-          key={offset}
-          data-current={i === index}
-          className={i === index ? "current" : ""}
-        >
-          {text.slice(offset, offset + query.length)}
-        </mark>,
-      );
-      start = offset + query.length;
-    });
-    result.push(text.slice(start));
-    return result;
-  }, [text, open, matches, index, query]);
   return (
     <div className="searchable-body">
       {open ? (
@@ -133,13 +116,12 @@ export default function SearchBody({
           <Search size={12} /> Найти · Ctrl+F
         </button>
       )}
-      {open && query ? (
-        <div className="code-view searched-code" ref={body}>
-          <pre>{pieces}</pre>
-        </div>
-      ) : (
-        children
-      )}
+      <VirtualCode
+        text={text}
+        matches={open ? matches : undefined}
+        queryLength={open ? query.length : 0}
+        active={index}
+      />
     </div>
   );
-}
+});
