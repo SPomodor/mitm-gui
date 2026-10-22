@@ -455,6 +455,30 @@ async function unusedPort() {
         await page.locator(".flow-row").first().click();
         await expect(page.locator(".full-url")).toContainText(endpoint);
         await expect(page.locator(".virtual-code-row").first()).toBeVisible();
+        if (
+          !(await page
+            .getByRole("button", { name: "Pretty", exact: true })
+            .evaluate((el) => el.classList.contains("accent")))
+        )
+          await page
+            .getByRole("button", { name: "Pretty", exact: true })
+            .click();
+        await page.locator(".virtual-code").evaluate((el) => {
+          el.scrollTop = 0;
+        });
+        if (endpoint === "/large-truncated") {
+          await expect(page.locator(".virtual-code")).toContainText(
+            '"items": [',
+          );
+          await expect(page.locator(".notice")).toContainText("256 KB");
+          await expect(
+            page.locator(".virtual-code .line-number").nth(1),
+          ).toHaveText("2");
+          await page.screenshot({
+            animations: "disabled",
+            path: path.join(output, "12-truncated-pretty.png"),
+          });
+        }
         const stats = await page
           .locator(".virtual-code")
           .evaluate((element) => ({
@@ -705,6 +729,9 @@ async function unusedPort() {
     )
       throw new Error("All-host mock did not match a second domain");
     await page.getByRole("button", { name: "Завершён", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "Завершён", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
     if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "completed")
       throw new Error("Mock stage did not switch");
     await expect(page.locator(".mock-log-list")).toContainText(

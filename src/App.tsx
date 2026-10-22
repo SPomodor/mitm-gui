@@ -1416,7 +1416,11 @@ function Inspector({
                   Показаны первые 256 KB. Полное тело можно сохранить.
                 </div>
               )}
-              <SearchBody rawText={message.text} format={format} />
+              <SearchBody
+                rawText={message.text}
+                format={format}
+                truncated={message.truncated}
+              />
             </>
           )}
         </>

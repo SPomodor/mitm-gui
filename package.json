@@ -1,6 +1,6 @@
 {
   "name": "chls",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Desktop HTTP and WireGuard debugging proxy",
   "main": "electron/main.cjs",
   "scripts": {
@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "build:engine": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-engine.ps1",
     "package": "npm run build && npm run build:engine && electron-builder --win portable",
-    "test": ".venv\\Scripts\\python.exe -m pytest tests -q"
+    "test": ".venv\\Scripts\\python.exe -m pytest tests -q",
+    "test:format": "node --experimental-strip-types --test tests/format-body.test.mts"
   },
   "keywords": [],
   "author": "CHLS",

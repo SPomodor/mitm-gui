@@ -1,21 +1,21 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Search, X } from "lucide-react";
 import VirtualCode from "./VirtualCode";
+import { formatBody } from "./formatBody";
 
 export default memo(function SearchBody({
   rawText,
   format,
+  truncated = false,
 }: {
   rawText: string;
   format: boolean;
+  truncated?: boolean;
 }) {
-  const formatted = useMemo(() => {
-    try {
-      return JSON.stringify(JSON.parse(rawText), null, 2);
-    } catch {
-      return rawText;
-    }
-  }, [rawText]);
+  const formatted = useMemo(
+    () => formatBody(rawText, truncated),
+    [rawText, truncated],
+  );
   const text = format ? formatted : rawText;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
