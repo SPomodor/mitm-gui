@@ -16,6 +16,7 @@ export interface Rule {
   phase: "request" | "response" | "both";
   host: string;
   path: string;
+  query?: string | null;
   method: string;
   match: "contains" | "exact" | "regex";
   action:
@@ -88,6 +89,7 @@ export interface Detail extends Flow {
   original_response: Message | null;
 }
 export interface Config {
+  ssl_proxying?: boolean;
   http: boolean;
   wireguard: boolean;
   port: number;
@@ -96,6 +98,7 @@ export interface Config {
   endpoint: string;
 }
 export interface Status {
+  recording: boolean;
   running: boolean;
   servers: {
     type: string;

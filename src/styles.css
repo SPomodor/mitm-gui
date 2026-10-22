@@ -1,4 +1,76 @@
 @import "tailwindcss";
+.host-focus-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.host-focus-row .host-item {
+  flex: 1;
+  min-width: 0;
+}
+.host-focus-row > .icon-button {
+  flex-shrink: 0;
+  margin-right: 8px;
+}
+.sidebar-section .text-button {
+  font-size: 12px;
+}
+.searchable-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.body-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.body-search input {
+  flex: 1;
+  min-width: 60px;
+}
+.body-search [role="status"] {
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+.body-find-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-end;
+  margin: 4px 12px;
+}
+.searched-code {
+  flex: 1;
+  min-height: 0;
+}
+.searched-code pre {
+  margin: 0;
+  font: inherit;
+  font-family: Consolas, "SFMono-Regular", monospace;
+  padding: 0 16px;
+  white-space: pre;
+}
+.searched-code mark {
+  background: var(--selected);
+  color: var(--text);
+  border-bottom: 1px solid var(--accent);
+}
+.searched-code mark.current {
+  background: var(--accent);
+  color: var(--bg);
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
 @theme {
   --font-sans: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
 }

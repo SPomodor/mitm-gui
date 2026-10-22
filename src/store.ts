@@ -35,7 +35,10 @@ export const useApp = create<State>((set, get) => ({
       api<Rule[]>("/rules"),
       api<Session[]>("/sessions"),
     ]);
-    const session = get().session || status.session;
+    const session = sessions.some((s) => s.id === get().session)
+      ? get().session
+      : status.session;
+    if (session !== get().session) set({ selected: null, flows: [] });
     set({
       status,
       rules,
@@ -72,7 +75,7 @@ export const useApp = create<State>((set, get) => ({
     const incoming = events.filter(
       (e) => e.type === "flow" && e.session === get().session,
     ) as unknown as Flow[];
-    if (incoming.length) {
+    if (incoming.length && !events.some((e) => e.type === "resync")) {
       const map = new Map(get().flows.map((f) => [f.id, f]));
       incoming.forEach((f) => map.set(f.id, f));
       set({
@@ -95,7 +98,11 @@ export const newRule = (kind: Rule["kind"] = "rewrite", flow?: Flow): Rule => ({
   kind,
   phase: kind === "rewrite" ? "response" : "request",
   host: flow?.original_host || flow?.host || "",
-  path: flow?.original_path || flow?.path || "",
+  path: (flow?.original_path || flow?.path || "").split("?")[0],
+  query: (flow?.original_path || flow?.path || "")
+    .split("?")
+    .slice(1)
+    .join("?"),
   method: flow?.original_method || flow?.method || "",
   match: flow ? "exact" : "contains",
   action: "header_modify",

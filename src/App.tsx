@@ -45,6 +45,8 @@ import { QRCodeSVG } from "qrcode.react";
 import { api, newRule, useApp } from "./store";
 import RewriteFields, { editableRule, requestActions } from "./RewriteFields";
 import Mocks from "./Mocks";
+import SearchBody from "./SearchBody";
+import { splitRuleLocation } from "./ruleLocation";
 import packageInfo from "../package.json";
 import type {
   Config,
@@ -211,6 +213,45 @@ export default function App() {
   } = useApp();
   const [page, setPage] = useState<"traffic" | "rules" | "mocks">("traffic");
   const [renaming, setRenaming] = useState<Session | null>(null);
+  const [confirmation, setConfirmation] = useState<{
+    title: string;
+    text: string;
+    action: () => Promise<void>;
+  } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const closeConfirmation = useMemo(() => () => setConfirmation(null), []);
+  const [focusedHosts, setFocusedHosts] = useState<string[]>(() => {
+    try {
+      const value = JSON.parse(
+        localStorage.getItem("chls-focus-hosts") || "[]",
+      );
+      return Array.isArray(value)
+        ? value.filter((v): v is string => typeof v === "string")
+        : [];
+    } catch {
+      return [];
+    }
+  });
+  const [focusOnly, setFocusOnly] = useState(false);
+  useEffect(() => {
+    localStorage.setItem("chls-focus-hosts", JSON.stringify(focusedHosts));
+  }, [focusedHosts]);
+  function toggleHostFocus(value: string) {
+    setFocusedHosts((items) =>
+      items.includes(value)
+        ? items.filter((h) => h !== value)
+        : [...items, value],
+    );
+  }
+  async function toggleSetting(route: string, enabled: boolean) {
+    try {
+      useApp.setState({
+        status: await api<Status>(route, "POST", { enabled }),
+      });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
   const [mockEnabled, setMockEnabled] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null);
   const closeRename = useMemo(() => () => setRenaming(null), []);
@@ -314,6 +355,7 @@ export default function App() {
       flows.filter(
         (f) =>
           (!host || f.host === host) &&
+          (!focusOnly || focusedHosts.includes(f.host)) &&
           (!search ||
             `${f.method} ${f.url} ${f.status || ""} ${f.client}`
               .toLowerCase()
@@ -322,7 +364,7 @@ export default function App() {
             (filter === "modified" && f.rules.length > 0) ||
             (filter === "errors" && (!!f.error || (f.status || 0) >= 400))),
       ),
-    [flows, host, search, filter],
+    [flows, host, search, filter, focusOnly, focusedHosts],
   );
   async function newSession() {
     try {
@@ -410,6 +452,29 @@ export default function App() {
                 <Pencil size={13} />
               </IconButton>
               <IconButton
+                title={`Удалить сессию: ${s.name}`}
+                disabled={status?.session === s.id || !!exporting}
+                onClick={() =>
+                  setConfirmation({
+                    title: "Удалить сессию?",
+                    text: `«${s.name}» и весь её трафик будут удалены.`,
+                    action: async () => {
+                      await api(`/sessions/${s.id}`, "DELETE");
+                      if (useApp.getState().session === s.id)
+                        useApp.setState({
+                          session: "",
+                          selected: null,
+                          flows: [],
+                        });
+                      setHost("");
+                      await refresh();
+                    },
+                  })
+                }
+              >
+                <Trash2 size={13} />
+              </IconButton>
+              <IconButton
                 title={`Экспортировать HAR: ${s.name}`}
                 disabled={!!exporting}
                 onClick={() => exportSession(s)}
@@ -427,6 +492,17 @@ export default function App() {
           <>
             <div className="sidebar-section">
               <span>ХОСТЫ</span>
+              <button
+                className={`text-button ${focusOnly ? "accent" : ""}`}
+                aria-pressed={focusOnly}
+                onClick={() => {
+                  setFocusOnly(!focusOnly);
+                  setHost("");
+                }}
+                title="Показывать только хосты в фокусе; запись остальных продолжается"
+              >
+                Только фокус
+              </button>
               <span className="muted">{hosts.length}</span>
             </div>
             <div className="host-list">
@@ -437,17 +513,34 @@ export default function App() {
                 <Globe size={14} />
                 <span>Все хосты</span>
               </button>
-              {hosts.map((h) => (
-                <button
-                  className={`host-item ${host === h ? "selected" : ""}`}
-                  key={h}
-                  title={h}
-                  onClick={() => setHost(h)}
-                >
-                  <ChevronRight size={12} />
-                  <span>{h}</span>
-                </button>
-              ))}
+              {[...new Set([...focusedHosts, ...hosts])]
+                .filter((h) => !focusOnly || focusedHosts.includes(h))
+                .map((h) => (
+                  <div className="host-focus-row" key={h}>
+                    <button
+                      className={`host-item ${host === h ? "selected" : ""}`}
+                      title={h}
+                      onClick={() => setHost(h)}
+                    >
+                      <ChevronRight size={12} />
+                      <span>{h}</span>
+                    </button>
+                    <button
+                      className={`icon-button ${focusedHosts.includes(h) ? "accent" : ""}`}
+                      aria-label={`Фокус: ${h}`}
+                      aria-pressed={focusedHosts.includes(h)}
+                      title="Добавить или убрать хост из фокуса"
+                      onClick={() => toggleHostFocus(h)}
+                    >
+                      <Filter size={13} />
+                    </button>
+                  </div>
+                ))}
+              {focusOnly && !focusedHosts.length && (
+                <p className="padded muted">
+                  Добавьте хост в фокус кнопкой рядом с его именем.
+                </p>
+              )}
             </div>
           </>
         )}
@@ -494,6 +587,30 @@ export default function App() {
               <Wifi size={15} />
               Подключение
             </button>
+            <button
+              className={`button subtle ${status?.config.ssl_proxying !== false ? "accent" : ""}`}
+              disabled={!ready}
+              aria-pressed={status?.config.ssl_proxying !== false}
+              title="Расшифровка HTTPS. Изменение действует на новые TLS-соединения; переподключите приложение. Без расшифровки HTTPS-правила недоступны."
+              onClick={() =>
+                toggleSetting(
+                  "/capture/ssl",
+                  status?.config.ssl_proxying === false,
+                )
+              }
+            >
+              SSL {status?.config.ssl_proxying === false ? "выкл" : "вкл"}
+            </button>
+            <button
+              className={`button ${status?.recording ? "recording" : "subtle"}`}
+              disabled={!ready}
+              aria-pressed={!!status?.recording}
+              title="Сохранение трафика в сессию. Прокси, WireGuard и правила продолжают работать. Уже записываемые запросы получат ответ."
+              onClick={() => toggleSetting("/recording", !status?.recording)}
+            >
+              {status?.recording ? <Pause size={13} /> : <Play size={13} />}{" "}
+              {status?.recording ? "Пауза записи" : "Включить запись"}
+            </button>
             <span className="toolbar-divider" />
             <button
               className={`button ${status?.running ? "recording" : "primary"}`}
@@ -535,22 +652,21 @@ export default function App() {
                 </span>
                 <IconButton
                   title="Очистить текущую сессию"
-                  onClick={async () => {
-                    if (!flows.length) return;
-                    if (
-                      !confirm(
-                        "Удалить запросы текущей сессии? Правила сохранятся.",
-                      )
-                    )
-                      return;
-                    try {
-                      await api(`/flows?session=${session}`, "DELETE");
-                      useApp.setState({ selected: null });
-                      await refresh();
-                    } catch (e) {
-                      setError((e as Error).message);
-                    }
-                  }}
+                  disabled={!flows.length}
+                  onClick={() =>
+                    setConfirmation({
+                      title: "Очистить трафик?",
+                      text: "Удалить все запросы выбранной сессии? Правила сохранятся.",
+                      action: async () => {
+                        await api(
+                          `/flows?session=${encodeURIComponent(session)}`,
+                          "DELETE",
+                        );
+                        useApp.setState({ selected: null, flows: [] });
+                        await refresh();
+                      },
+                    })
+                  }
                 >
                   <Trash2 size={16} />
                 </IconButton>
@@ -595,6 +711,8 @@ export default function App() {
               flows={filtered}
               onRule={openEditor}
               onConnect={() => setConnect(true)}
+              onFocusHost={toggleHostFocus}
+              focusedHosts={focusedHosts}
             />
           </>
         ) : page === "rules" ? (
@@ -612,7 +730,9 @@ export default function App() {
             {!ready
               ? "Подключение к движку"
               : status?.running
-                ? "Recording"
+                ? status.recording
+                  ? "Запись включена"
+                  : "Запись на паузе"
                 : "Ready"}
             <span className="footer-divider" />
             {status?.running
@@ -645,6 +765,39 @@ export default function App() {
           onStart={capture}
           busy={busy}
         />
+      )}
+      {confirmation && (
+        <Modal title={confirmation.title} onClose={closeConfirmation}>
+          <div className="padded">
+            <p>{confirmation.text}</p>
+            <div className="dialog-actions">
+              <button
+                className="button"
+                disabled={confirmBusy}
+                onClick={closeConfirmation}
+              >
+                Отмена
+              </button>
+              <button
+                className="button primary"
+                disabled={confirmBusy}
+                onClick={async () => {
+                  setConfirmBusy(true);
+                  try {
+                    await confirmation.action();
+                    setConfirmation(null);
+                  } catch (e) {
+                    setError((e as Error).message);
+                  } finally {
+                    setConfirmBusy(false);
+                  }
+                }}
+              >
+                {confirmBusy ? "Удаление…" : "Удалить"}
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
       {renaming && (
         <RenameSessionDialog item={renaming} onClose={closeRename} />
@@ -729,7 +882,11 @@ function Traffic({
   flows,
   onRule,
   onConnect,
+  onFocusHost,
+  focusedHosts,
 }: {
+  onFocusHost: (host: string) => void;
+  focusedHosts: string[];
   flows: Flow[];
   onRule: (rule: Rule) => void;
   onConnect: () => void;
@@ -965,6 +1122,12 @@ function Traffic({
               </button>
             );
           })}
+          <button onClick={() => onFocusHost(context.flow.host)}>
+            <Filter size={14} />
+            {focusedHosts.includes(context.flow.host)
+              ? "Убрать хост из фокуса"
+              : "Добавить хост в фокус"}
+          </button>
           <div className="menu-separator" />
           <button
             onClick={() =>
@@ -999,6 +1162,17 @@ function Inspector({
     ? (`original_${side}` as "original_request" | "original_response")
     : side;
   const message = detail[key];
+  useEffect(() => {
+    const find = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        setTab("body");
+        setTimeout(() => window.dispatchEvent(new Event("chls-find-body")), 0);
+      }
+    };
+    window.addEventListener("keydown", find);
+    return () => window.removeEventListener("keydown", find);
+  }, []);
   async function copy(text: string) {
     try {
       await navigator.clipboard.writeText(text);
@@ -1211,7 +1385,9 @@ function Inspector({
                   Показаны первые 256 KB. Полное тело можно сохранить.
                 </div>
               )}
-              <Code text={format ? pretty(message.text) : message.text} />
+              <SearchBody text={format ? pretty(message.text) : message.text}>
+                <Code text={format ? pretty(message.text) : message.text} />
+              </SearchBody>
             </>
           )}
         </>
@@ -1480,11 +1656,17 @@ export function RuleEditor({
   rule: Rule;
   onClose: () => void;
 }) {
-  const [draft, setDraft] = useState(() => editableRule(rule)),
+  const [draft, setDraft] = useState(() =>
+      editableRule({
+        ...rule,
+        ...splitRuleLocation(rule.path, rule.match, rule.query),
+      }),
+    ),
     [error, setError] = useState(""),
     [saving, setSaving] = useState(false);
   const set = <K extends keyof Rule>(key: K, value: Rule[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
+  const queryInput = useRef<HTMLInputElement>(null);
   const { rules } = useApp();
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -1606,11 +1788,19 @@ export function RuleEditor({
           </div>
           <div className="form-grid path-match">
             <label>
-              Путь с query
+              Путь
               <input
                 placeholder="/api/config"
                 value={draft.path}
-                onChange={(e) => set("path", e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setDraft((d) => ({
+                    ...d,
+                    ...splitRuleLocation(value, d.match, d.query),
+                  }));
+                  if (draft.match !== "regex" && value.endsWith("?"))
+                    queryInput.current?.focus();
+                }}
               />
             </label>
             <label>
@@ -1625,6 +1815,20 @@ export function RuleEditor({
               </select>
             </label>
           </div>
+          <label>
+            Query string
+            <input
+              placeholder="encrypted_request=1&deviceid=…"
+              ref={queryInput}
+              value={draft.query ?? ""}
+              onChange={(e) => set("query", e.target.value.replace(/^\?/, ""))}
+            />
+          </label>
+          <p className="field-hint">
+            Параметры без «?». Пустое поле — любые параметры. Сопоставление
+            применяется отдельно к пути и query string. Полный URL можно
+            вставить в поле пути.
+          </p>
           <p className="field-hint">
             Пустой хост — любой. Для любого пути выберите «Содержит» и оставьте
             путь пустым.

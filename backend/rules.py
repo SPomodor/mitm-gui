@@ -19,6 +19,7 @@ class Rule(BaseModel):
     phase: Literal['request', 'response', 'both'] = 'request'
     host: str = ''
     path: str = ''
+    query: str | None = None
     method: str = ''
     match: Literal['contains', 'exact', 'regex'] = 'contains'
     action: Literal['header', 'body', 'json', 'url', 'host', 'path', 'status', 'header_add', 'header_modify', 'header_remove', 'query_add', 'query_modify', 'query_remove'] = 'header'
@@ -33,11 +34,23 @@ class Rule(BaseModel):
 
     @model_validator(mode='after')
     def validate_rule(self, info: ValidationInfo):
+        if self.match != 'regex':
+            if self.path.startswith(('https://', 'http://')):
+                from urllib.parse import urlsplit
+                url = urlsplit(self.path)
+                self.host = url.hostname or self.host
+                self.path, self.query = url.path or '/', url.query
+            elif self.query is not None and '?' in self.path:
+                self.path, self.query = self.path.split('?', 1)
         if self.match == 'regex':
+            if self.query and len(self.query) > 500:
+                raise ValueError('Query regex is too long')
             if len(self.path) > 500:
                 raise ValueError('Regex is too long')
             try:
                 re.compile(self.path)
+                if self.query:
+                    re.compile(self.query)
             except re.error as exc:
                 raise ValueError(f'Некорректное выражение: {exc}') from exc
         if self.kind == 'rewrite':
@@ -78,11 +91,18 @@ def matches(rule: Rule, flow: http.HTTPFlow) -> bool:
     if rule.method and location.get('method', request.method).upper() != rule.method.upper():
         return False
     path = location.get('path', request.path)
-    if rule.match == 'exact':
-        return path == rule.path
-    if rule.match == 'regex':
-        return re.search(rule.path, path) is not None
-    return rule.path in path
+    query = ''
+    if rule.query is not None:
+        path, _, query = path.partition('?')
+    def compare(wanted, actual):
+        if rule.match == 'exact':
+            return actual == wanted
+        if rule.match == 'regex':
+            return re.search(wanted, actual) is not None
+        return wanted in actual
+    if rule.query and not compare(rule.query, query):
+        return False
+    return compare(rule.path, path)
 
 
 def apply_rules(flow: http.HTTPFlow, rules: list[Rule], phase: str, max_body: int):

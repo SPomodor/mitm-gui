@@ -62,9 +62,10 @@ class Store:
         return readable_record(json.loads(row[0])) if row else None
 
     def clear(self, session):
-        ids = [r[0] for r in self.db.execute('SELECT id FROM flows WHERE session=?', (session,))]
+        ids = {r[0] for r in self.db.execute('SELECT id FROM flows WHERE session=?', (session,))}
         self.db.execute('DELETE FROM flows WHERE session=?', (session,))
         self.db.commit()
-        for flow_id in ids:
-            for file in (self.root / 'bodies').glob(f'{flow_id}-*'):
+        # Scan once rather than globbing the whole directory for every flow.
+        for file in (self.root / 'bodies').iterdir():
+            if file.name.rsplit('-', 2)[0] in ids or file.name.rsplit('-', 1)[0] in ids:
                 file.unlink(missing_ok=True)

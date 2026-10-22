@@ -4,7 +4,31 @@ import pytest
 from mitmproxy import connection, http
 from pydantic import ValidationError
 
-from backend.rules import Rule, apply_rules
+from backend.rules import Rule, apply_rules, matches
+
+
+@pytest.mark.parametrize('mode,path,query,expected', [
+    ('exact', '/v1/items', 'q=one&q=two&keep=a%2Bb', True),
+    ('exact', '/v1/items', 'q=other', False),
+    ('exact', '/v1/items', '', True),
+    ('contains', '/items', 'keep=a%2B', True),
+    ('regex', r'^/v1/items$', r'^q=one.*keep=', True),
+    ('regex', r'^/v1/items$', r'^absent=', False),
+])
+def test_separate_path_and_query_matching(mode, path, query, expected):
+    rule = Rule(id='query', name='query', kind='block', match=mode, path=path, query=query)
+    assert matches(rule, flow()) is expected
+
+
+def test_pasted_url_and_legacy_query_rules():
+    rule = Rule(id='url', name='URL', kind='block', match='exact', path='https://api.example.com/v1/items?q=one&q=two&keep=a%2Bb')
+    assert rule.host == 'api.example.com'
+    assert rule.path == '/v1/items' and rule.query == 'q=one&q=two&keep=a%2Bb'
+    assert matches(rule, flow())
+    legacy = Rule(id='old', name='Old', kind='block', match='regex', path=r'^/v1/items\?q=one')
+    assert legacy.query is None and matches(legacy, flow())
+    with pytest.raises(ValidationError):
+        Rule(id='invalid', name='Invalid', kind='block', match='regex', query='[')
 
 
 def flow():

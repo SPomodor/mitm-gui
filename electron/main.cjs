@@ -29,7 +29,7 @@ if (process.env.CHLS_USER_DATA) {
   app.setPath("userData", path.resolve(process.env.CHLS_USER_DATA));
 }
 const allowed =
-  /^\/(status|mocks(?:\/(?:validate|control))?|capture\/(start|stop)|wireguard|certificate|rules(?:\/[a-zA-Z0-9-]+)?|sessions(?:\/[a-zA-Z0-9-]+(?:\/export)?)?|flows(?:\/[a-zA-Z0-9-]+(?:\/body\/(?:original_)?(?:request|response))?)?)(?:\?.*)?$/;
+  /^\/(status|recording|mocks(?:\/(?:validate|control))?|capture\/(start|stop|ssl)|wireguard|certificate|rules(?:\/[a-zA-Z0-9-]+)?|sessions(?:\/[a-zA-Z0-9-]+(?:\/export)?)?|flows(?:\/[a-zA-Z0-9-]+(?:\/body\/(?:original_)?(?:request|response))?)?)(?:\?.*)?$/;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function request(route, method = "GET", data, timeout = 20000) {

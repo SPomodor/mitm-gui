@@ -33,6 +33,7 @@ ROOT.mkdir(parents=True, exist_ok=True)
 
 
 class CaptureConfig(BaseModel):
+    ssl_proxying: bool = True
     http: bool = True
     wireguard: bool = False
     port: int = Field(default=8080, ge=1024, le=65535)
@@ -49,6 +50,8 @@ class Engine:
         self.config = CaptureConfig(wireguard=True)
         self.clients = set()
         self.pending = {}
+        self.recording = True
+        self.generations = {}
         self.event = asyncio.Event()
         self.master = None
         self.lock = asyncio.Lock()
@@ -98,7 +101,7 @@ class Engine:
                 item = server.to_json()
                 item.pop('wireguard_conf', None)
                 servers.append(item)
-        return {'running': any(s.get('is_running') for s in servers), 'servers': servers, 'config': self.config.model_dump(), 'session': self.store.session, 'errors': self.errors[-10:], 'addresses': addresses(), 'max_body_mb': MAX_BODY // 1024 // 1024}
+        return {'recording': self.recording, 'running': any(s.get('is_running') for s in servers), 'servers': servers, 'config': self.config.model_dump(), 'session': self.store.session, 'errors': self.errors[-10:], 'addresses': addresses(), 'max_body_mb': MAX_BODY // 1024 // 1024}
 
     async def stop(self):
         proxyserver = self.master.addons.get('proxyserver')
@@ -140,11 +143,24 @@ class CaptureAddon:
     def running(self):
         self.engine.ready.set()
 
+    def tls_clienthello(self, data):
+        # Tunnel TLS unchanged; ordinary HTTP and listeners remain active.
+        data.ignore_connection = not self.engine.config.ssl_proxying
+
     def requestheaders(self, flow):
-        flow.metadata['session'] = self.engine.store.session
+        session = self.engine.store.session
+        flow.metadata.update(session=session, recording=self.engine.recording,
+                             generation=self.engine.generations.get(session, 0))
+
+    def can_record(self, flow):
+        session = flow.metadata.get('session')
+        return (flow.metadata.get('recording', False)
+                and flow.metadata.get('generation') == self.engine.generations.get(session, 0)
+                and self.engine.store.db.execute('SELECT 1 FROM sessions WHERE id=?', (session,)).fetchone() is not None)
 
     def request(self, flow):
-        flow.metadata['original_request'] = snapshot(self.engine, flow, flow.request, 'original_request')
+        if self.can_record(flow):
+            flow.metadata['original_request'] = snapshot(self.engine, flow, flow.request, 'original_request')
         # Each flow uses an immutable rule revision for request and response.
         flow.metadata['rule_revision'] = list(self.engine.rules)
         if self.engine.mocks.handle(flow):
@@ -154,7 +170,8 @@ class CaptureAddon:
         self.record(flow)
 
     def response(self, flow):
-        flow.metadata['original_response'] = snapshot(self.engine, flow, flow.response, 'original_response')
+        if self.can_record(flow):
+            flow.metadata['original_response'] = snapshot(self.engine, flow, flow.response, 'original_response')
         if not flow.metadata.get('mock'):
             apply_rules(flow, flow.metadata.get('rule_revision', self.engine.rules), 'response', MAX_BODY)
         self.record(flow)
@@ -163,6 +180,8 @@ class CaptureAddon:
         self.record(flow)
 
     def record(self, flow):
+        if not self.can_record(flow):
+            return
         request, response = flow.request, flow.response
         started = request.timestamp_start
         ended = response.timestamp_end if response else flow.timestamp_end
@@ -263,6 +282,47 @@ async def stop():
     async with engine.lock:
         await engine.stop()
     return engine.status()
+
+
+class Toggle(BaseModel):
+    enabled: bool
+
+
+@app.post('/recording')
+async def recording(payload: Toggle):
+    engine.recording = payload.enabled
+    engine.publish({'type': 'status'})
+    return engine.status()
+
+
+@app.post('/capture/ssl')
+async def ssl_proxying(payload: Toggle):
+    engine.config.ssl_proxying = payload.enabled
+    (ROOT / 'capture.json').write_text(engine.config.model_dump_json(indent=2), 'utf-8')
+    engine.publish({'type': 'status'})
+    return engine.status()
+
+
+def invalidate_session(session):
+    engine.generations[session] = engine.generations.get(session, 0) + 1
+    for key, event in list(engine.pending.items()):
+        if event.get('type') == 'flow' and event.get('session') == session:
+            del engine.pending[key]
+
+
+@app.delete('/sessions/{session_id}')
+async def delete_session(session_id: str):
+    if not any(s['id'] == session_id for s in engine.store.sessions()):
+        raise HTTPException(404, 'Сессия не найдена')
+    if session_id == engine.store.session:
+        raise HTTPException(409, 'Идёт запись в эту сессию. Сначала создайте новую сессию')
+    async with EXPORT_LOCK:
+        invalidate_session(session_id)
+        engine.store.clear(session_id)
+        engine.store.db.execute('DELETE FROM sessions WHERE id=?', (session_id,))
+        engine.store.db.commit()
+    engine.publish({'type': 'resync'})
+    return {'ok': True}
 
 
 @app.get('/wireguard')
@@ -430,6 +490,7 @@ async def flows(session: str = ''):
 @app.delete('/flows')
 async def clear(session: str):
     async with EXPORT_LOCK:
+        invalidate_session(session)
         engine.store.clear(session)
     engine.publish({'type': 'resync'})
     return {'ok': True}

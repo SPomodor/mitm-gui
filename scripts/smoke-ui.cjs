@@ -196,6 +196,7 @@ async function unusedPort() {
       host = `api.example.test:${originPort}`,
       method = "GET",
       extraHeaders = {},
+      body,
     ) {
       return new Promise((resolve, reject) => {
         const req = http.request(
@@ -213,7 +214,7 @@ async function unusedPort() {
           },
         );
         req.on("error", reject);
-        req.end();
+        req.end(body);
       });
     }
     const url = `http://127.0.0.1:${originPort}/api/config`;
@@ -227,6 +228,51 @@ async function unusedPort() {
       "api.example.test",
     );
     await expect(page.locator(".code-view")).toContainText("CHLS");
+    await page.keyboard.press("Control+f");
+    await expect(
+      page.getByLabel("Найти в теле", { exact: true }),
+    ).toBeFocused();
+    await page.getByLabel("Найти в теле", { exact: true }).fill("true");
+    await expect(page.locator(".searched-code mark")).toHaveCount(3);
+    await expect(page.locator(".body-search [role=status]")).toHaveText("1/3");
+    await page.getByLabel("Найти в теле", { exact: true }).press("Enter");
+    await expect(page.locator(".body-search [role=status]")).toHaveText("2/3");
+    await page.getByLabel("Найти в теле", { exact: true }).press("Shift+Enter");
+    await expect(page.locator(".body-search [role=status]")).toHaveText("1/3");
+    await page.getByLabel("Найти в теле", { exact: true }).fill("no-such-text");
+    await expect(page.locator(".body-search [role=status]")).toHaveText("0/0");
+    await page.getByLabel("Найти в теле", { exact: true }).press("Escape");
+    await expect(page.getByLabel("Найти в теле", { exact: true })).toHaveCount(
+      0,
+    );
+    await page.getByLabel("Фокус: api.example.test", { exact: true }).click();
+    await page
+      .getByRole("button", { name: "Только фокус", exact: true })
+      .click();
+    await expect(page.locator(".flow-row")).toHaveCount(1);
+    await page.getByLabel("Фокус: api.example.test", { exact: true }).click();
+    await expect(page.locator(".flow-row")).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "Только фокус", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Пауза записи", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Включить запись", exact: true }),
+    ).toBeVisible();
+    await fetchProxy(url + "?not-recorded=1");
+    const saved = await page.evaluate(() => window.chls.api("/flows"));
+    if (saved.length !== 1)
+      throw new Error("Recording pause still stores traffic");
+    await page
+      .getByRole("button", { name: "Включить запись", exact: true })
+      .click();
+    await page.getByRole("button", { name: "SSL вкл", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "SSL выкл", exact: true }),
+    ).toHaveAttribute("aria-pressed", "false");
+    await page.getByRole("button", { name: "SSL выкл", exact: true }).click();
     await page.screenshot({
       animations: "disabled",
       path: path.join(output, "03-inspector.png"),
@@ -240,6 +286,21 @@ async function unusedPort() {
     await expect(editor.getByLabel("Хост", { exact: true })).toHaveValue(
       "api.example.test",
     );
+    await editor
+      .getByLabel("Путь", { exact: true })
+      .fill("https://site.net/report?encrypted_request=1&deviceid=c6ebaf69c6");
+    await expect(editor.getByLabel("Путь", { exact: true })).toHaveValue(
+      "/report",
+    );
+    await expect(
+      editor.getByLabel("Query string", { exact: true }),
+    ).toHaveValue("encrypted_request=1&deviceid=c6ebaf69c6");
+    await expect(editor.getByLabel("Хост", { exact: true })).toHaveValue(
+      "site.net",
+    );
+    await editor.getByLabel("Хост", { exact: true }).fill("api.example.test");
+    await editor.getByLabel("Путь", { exact: true }).fill("/api/config");
+    await editor.getByLabel("Query string", { exact: true }).fill("");
     await editor
       .getByLabel("Название", { exact: true })
       .fill("Enable feature flag");
@@ -356,9 +417,9 @@ async function unusedPort() {
         .getByRole("button", { name: "Создать Rewrite", exact: true })
         .click(),
     );
-    await expect(
-      editor.getByLabel("Путь с query", { exact: true }),
-    ).toHaveValue("/api/config");
+    await expect(editor.getByLabel("Путь", { exact: true })).toHaveValue(
+      "/api/config",
+    );
     await Promise.all([
       editor.waitForEvent("close"),
       editor.getByRole("button", { name: "Отмена", exact: true }).click(),
@@ -601,6 +662,70 @@ async function unusedPort() {
       .getByRole("navigation")
       .getByRole("button", { name: /^Правила/ })
       .click();
+    await page
+      .getByRole("navigation")
+      .getByRole("button", { name: /^Трафик/ })
+      .click();
+    await fetchProxy(
+      `http://127.0.0.1:${originPort}/search-request`,
+      `api.example.test:${originPort}`,
+      "POST",
+      { "Content-Type": "application/json" },
+      JSON.stringify({ order_id: "ABC-123", repeat: "ABC-123" }),
+    );
+    await expect(page.locator(".flow-row").first()).toContainText(
+      "/search-request",
+    );
+    await page.locator(".flow-row").first().click();
+    await page.getByRole("button", { name: "Request", exact: true }).click();
+    await page.getByRole("button", { name: "Headers", exact: true }).click();
+    await page.keyboard.press("Control+f");
+    await expect(
+      page.getByLabel("Найти в теле", { exact: true }),
+    ).toBeFocused();
+    await page.getByLabel("Найти в теле", { exact: true }).fill("ABC-123");
+    await expect(page.locator(".searched-code mark")).toHaveCount(2);
+    await page.screenshot({
+      animations: "disabled",
+      path: path.join(output, "10-body-search.png"),
+    });
+    await page.getByLabel("Найти в теле", { exact: true }).press("Escape");
+    await page
+      .getByRole("button", { name: "Очистить текущую сессию", exact: true })
+      .click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Удалить", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.locator(".flow-row")).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "Новая сессия", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Phone debugging", exact: true })
+      .click();
+    await page
+      .getByRole("button", {
+        name: "Удалить сессию: Phone debugging",
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Удалить", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", {
+        name: "Удалить сессию: Phone debugging",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await page
+      .getByRole("navigation")
+      .getByRole("button", { name: /^Правила/ })
+      .click();
     await page.getByRole("button", { name: "Остановить", exact: true }).click();
     await expect(
       page.getByRole("button", { name: "Начать захват", exact: true }),
@@ -633,6 +758,14 @@ async function unusedPort() {
           "wireguard QR",
           "real capture",
           "inspector",
+          "Ctrl+F in response and request JSON, highlights, next/previous, no match, Escape",
+          "Ctrl+F opens body search from Headers",
+          "host focus filters display without dropping capture",
+          "recording pause keeps proxy working and does not save requests",
+          "SSL toggle",
+          "pasted URL splits host, path and query",
+          "clear session traffic through app dialog",
+          "delete selected old session and return to current session",
           "create Rewrite",
           "separate non-modal rule window",
           "copy URL from main window while draft stays open",

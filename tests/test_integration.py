@@ -24,6 +24,8 @@ def free_port(kind=socket.SOCK_STREAM):
 
 class Upstream(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path.startswith('/slow-clear'):
+            time.sleep(2)
         data = json.dumps({'enabled': False, 'path': self.path, 'header': self.headers.get('X-Debug'), 'items': [1, 2]}).encode()
         compressed = self.path.startswith('/gzip')
         if compressed:
@@ -428,3 +430,65 @@ def test_trigger_modes_real_requests_retry_guard_and_reset(environment):
     finally:
         client.post('/mocks/control', json={'action': 'disable'})
         client.post('/mocks/control', json={'action': 'mode', 'mode': 'free'})
+
+
+def test_recording_clear_delete_query_and_ssl(environment):
+    from concurrent.futures import ThreadPoolExecutor
+    client, port, _, upstream, root = environment
+    assert client.post('/capture/start', json={'port': port, 'lan': False}).status_code == 200
+    client.post('/mocks/control', json={'action': 'disable'})
+    session = client.post('/sessions').json()['id']
+    assert client.put('/rules', json=[rule('query-block', 'block', path='/report', query='encrypted_request=1', match='exact', status=418)]).status_code == 200
+    with httpx.Client(proxy=f'http://127.0.0.1:{port}', trust_env=False) as proxy:
+        assert client.post('/recording', json={'enabled': False}).json()['running'] is True
+        assert proxy.get(upstream + '/report?encrypted_request=1').status_code == 418
+        assert proxy.get(upstream + '/report?encrypted_request=2').status_code == 200
+        assert client.get('/flows').json() == []
+        assert client.post('/recording', json={'enabled': True}).json()['recording'] is True
+        assert proxy.get(upstream + '/report?encrypted_request=1').status_code == 418
+        assert len(client.get('/flows').json()) == 1
+    with ThreadPoolExecutor() as pool:
+        future = pool.submit(httpx.get, upstream + '/slow-clear', proxy=f'http://127.0.0.1:{port}')
+        for _ in range(200):
+            if any(f['path'] == '/slow-clear' for f in client.get('/flows').json()):
+                break
+            time.sleep(.02)
+        else:
+            pytest.fail('No pending request was captured')
+        removed_ids = [f['id'] for f in client.get('/flows').json()]
+        assert client.delete('/flows', params={'session': session}).status_code == 200
+        assert future.result().status_code == 200
+        assert client.get('/flows').json() == []
+        assert not any(p.name.startswith(tuple(removed_ids)) for p in (root / 'bodies').iterdir())
+    assert client.delete(f'/sessions/{session}').status_code == 409
+    with httpx.Client(proxy=f'http://127.0.0.1:{port}', trust_env=False) as proxy:
+        assert proxy.get(upstream + '/stored-before-delete').status_code == 200
+    saved_id = client.get('/flows').json()[0]['id']
+    assert list((root / 'bodies').glob(saved_id + '-*'))
+    client.post('/sessions')
+    assert client.delete(f'/sessions/{session}').status_code == 200
+    assert client.get(f'/flows/{saved_id}').status_code == 404
+    assert not list((root / 'bodies').glob(saved_id + '-*'))
+    assert not any(s['id'] == session for s in client.get('/sessions').json())
+    assert client.get(f'/sessions/{session}/export').status_code == 404
+    assert client.delete('/sessions/missing').status_code == 404
+
+    tls_origin = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Upstream)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(str(root / 'certificates' / 'mitmproxy-ca.pem'))
+    tls_origin.socket = context.wrap_socket(tls_origin.socket, server_side=True)
+    thread = threading.Thread(target=tls_origin.serve_forever, daemon=True)
+    thread.start()
+    try:
+        assert client.put('/rules', json=[rule('ssl-block', 'block', path='/ssl-check', query='', match='exact', status=418)]).status_code == 200
+        assert client.post('/capture/ssl', json={'enabled': False}).json()['config']['ssl_proxying'] is False
+        with httpx.Client(proxy=f'http://127.0.0.1:{port}', verify=False, trust_env=False) as proxy:
+            assert proxy.get(f'https://127.0.0.1:{tls_origin.server_port}/ssl-check').status_code == 200
+            assert not any(f['path'] == '/ssl-check' for f in client.get('/flows').json())
+            assert proxy.get(upstream + '/ssl-check').status_code == 418
+        assert client.post('/capture/ssl', json={'enabled': True}).json()['config']['ssl_proxying'] is True
+        with httpx.Client(proxy=f'http://127.0.0.1:{port}', verify=False, trust_env=False) as proxy:
+            assert proxy.get(f'https://127.0.0.1:{tls_origin.server_port}/ssl-check').status_code == 418
+    finally:
+        tls_origin.shutdown()
+        client.put('/rules', json=[])
