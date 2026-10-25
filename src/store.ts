@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Flow, Rule, Session, Status } from "./types";
+import type { Flow, HttpFlow, Rule, Session, Status } from "./types";
 interface State {
   status: Status | null;
   flows: Flow[];
@@ -86,7 +86,10 @@ export const useApp = create<State>((set, get) => ({
     }
   },
 }));
-export const newRule = (kind: Rule["kind"] = "rewrite", flow?: Flow): Rule => ({
+export const newRule = (
+  kind: Rule["kind"] = "rewrite",
+  flow?: HttpFlow,
+): Rule => ({
   id: crypto.randomUUID(),
   name:
     kind === "rewrite"

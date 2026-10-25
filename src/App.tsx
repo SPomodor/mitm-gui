@@ -23,6 +23,7 @@ import {
   Globe,
   Layers,
   Link,
+  LockKeyhole,
   LoaderCircle,
   Network,
   Pause,
@@ -55,6 +56,8 @@ import packageInfo from "../package.json";
 import type {
   Config,
   Detail,
+  HttpDetail,
+  ConnectionFlow,
   Flow,
   Message,
   Rule,
@@ -62,6 +65,12 @@ import type {
   Status,
 } from "./types";
 
+const recordLocation = (flow: Flow) =>
+  flow.kind === "http" ? flow.url : flow.endpoint;
+const recordLabel = (flow: Flow) =>
+  flow.kind === "http" ? flow.method : flow.protocol;
+const recordStatus = (flow: Flow) =>
+  flow.kind === "http" ? flow.status : null;
 const kindLabel = {
   rewrite: "Rewrite",
   map_local: "Map Local",
@@ -264,18 +273,32 @@ export default function App() {
   }
   const [mockEnabled, setMockEnabled] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null);
+  const [exportChoice, setExportChoice] = useState<Session | null>(null);
+  const [exportConnections, setExportConnections] = useState(false);
   const closeRename = useMemo(() => () => setRenaming(null), []);
   async function exportSession(item: Session) {
     if (exporting) return;
     setExporting(item.id);
     try {
-      await window.chls.exportSession(item.id, item.name);
+      const saved = await window.chls.exportSession(
+        item.id,
+        item.name,
+        exportConnections ? "charles" : "http",
+      );
+      if (saved) setExportChoice(null);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setExporting(null);
     }
   }
+  const [sslOpen, setSSLOpen] = useState(false);
+  const [sslSeed, setSSLSeed] = useState<string | null>(null);
+  const closeSSL = useMemo(() => () => setSSLOpen(false), []);
+  const openSSL = (host: string | null = null) => {
+    setSSLSeed(host);
+    setSSLOpen(true);
+  };
   const [connect, setConnect] = useState(false),
     [search, setSearch] = useState(""),
     [host, setHost] = useState(""),
@@ -370,12 +393,15 @@ export default function App() {
           (!host || f.host === host) &&
           (!focusOnly || focusedHosts.includes(f.host)) &&
           (!search ||
-            `${f.method} ${f.url} ${f.status || ""} ${f.client}`
+            `${recordLabel(f)} ${recordLocation(f)} ${recordStatus(f) || ""} ${f.client}`
               .toLowerCase()
               .includes(search.toLowerCase())) &&
           (filter === "all" ||
-            (filter === "modified" && f.rules.length > 0) ||
-            (filter === "errors" && (!!f.error || (f.status || 0) >= 400))),
+            (filter === "modified" &&
+              f.kind === "http" &&
+              f.rules.length > 0) ||
+            (filter === "errors" &&
+              (!!f.error || (recordStatus(f) || 0) >= 400))),
       ),
     [flows, host, search, filter, focusOnly, focusedHosts],
   );
@@ -448,7 +474,10 @@ export default function App() {
         <IconButton
           title={`Экспортировать HAR: ${s.name}`}
           disabled={!!exporting}
-          onClick={() => exportSession(s)}
+          onClick={() => {
+            setExportConnections(false);
+            setExportChoice(s);
+          }}
         >
           {exporting === s.id ? (
             <LoaderCircle size={13} className="spin" />
@@ -690,7 +719,11 @@ export default function App() {
                 status?.config.ssl_proxying === false ? "SSL выкл" : "SSL вкл"
               }
               aria-pressed={status?.config.ssl_proxying !== false}
-              title="Расшифровка HTTPS. Изменение действует на новые TLS-соединения; переподключите приложение. Без расшифровки HTTPS-правила недоступны."
+              title={
+                status?.config.ssl_scope === "selected"
+                  ? `SSL: только выбранные хосты (${status.config.ssl_hosts?.length || 0}). Изменения действуют на новые соединения.`
+                  : "SSL: все хосты. Изменения действуют на новые соединения."
+              }
               onClick={() =>
                 toggleSetting(
                   "/capture/ssl",
@@ -704,6 +737,13 @@ export default function App() {
                 <ShieldCheck size={18} />
               )}
             </button>
+            <IconButton
+              title="Настроить SSL"
+              disabled={!ready}
+              onClick={() => openSSL()}
+            >
+              <ChevronDown size={13} />
+            </IconButton>
             <button
               className={`record-toggle ${status?.recording ? "is-recording" : ""}`}
               disabled={!ready}
@@ -823,6 +863,7 @@ export default function App() {
               archived={!!viewingArchive}
               onFocusHost={toggleHostFocus}
               focusedHosts={focusedHosts}
+              onSSLHost={(host) => openSSL(host)}
             />
           </>
         ) : page === "rules" ? (
@@ -867,6 +908,13 @@ export default function App() {
           </div>
         </footer>
       </main>
+      {sslOpen && status && (
+        <SSLSettings
+          config={status.config}
+          seedHost={sslSeed}
+          onClose={closeSSL}
+        />
+      )}
       {connect && (
         <Connection
           config={config}
@@ -909,10 +957,163 @@ export default function App() {
           </div>
         </Modal>
       )}
+      {exportChoice && (
+        <Modal
+          title="Экспортировать HAR"
+          onClose={() => {
+            if (!exporting) setExportChoice(null);
+          }}
+        >
+          <div className="padded">
+            <p>По умолчанию HAR содержит только HTTP-запросы и ответы.</p>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={exportConnections}
+                disabled={!!exporting}
+                onChange={(event) => setExportConnections(event.target.checked)}
+              />
+              Включить сводки соединений для Charles
+            </label>
+            {exportConnections && (
+              <p className="muted">
+                Зашифрованные соединения будут представлены условными записями
+                CONNECT. Это сведения об адресах и объёме данных, без HTTP-путей
+                и содержимого.
+              </p>
+            )}
+            <div className="dialog-actions">
+              <button
+                className="button"
+                disabled={!!exporting}
+                onClick={() => setExportChoice(null)}
+              >
+                Отмена
+              </button>
+              <button
+                className="button primary"
+                disabled={!!exporting}
+                onClick={() => exportSession(exportChoice)}
+              >
+                {exporting ? "Экспорт…" : "Сохранить HAR"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
       {renaming && (
         <RenameSessionDialog item={renaming} onClose={closeRename} />
       )}
     </div>
+  );
+}
+
+function SSLSettings({
+  config,
+  seedHost,
+  onClose,
+}: {
+  config: Config;
+  seedHost: string | null;
+  onClose: () => void;
+}) {
+  const [scope, setScope] = useState<"all" | "selected">(
+    seedHost ? "selected" : config.ssl_scope || "all",
+  );
+  const [hosts, setHosts] = useState(
+    [
+      ...new Set([
+        ...(config.ssl_hosts || []),
+        ...(seedHost ? [seedHost] : []),
+      ]),
+    ].join("\n"),
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  return (
+    <Modal title="Расшифровка SSL" onClose={onClose}>
+      <form
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setSaving(true);
+          setError("");
+          try {
+            const status = await api<Status>("/capture/ssl", "POST", {
+              enabled:
+                (useApp.getState().status?.config ?? config).ssl_proxying !==
+                false,
+              scope,
+              hosts: hosts
+                .split(/\r?\n/)
+                .map((value) => value.trim())
+                .filter(Boolean),
+            });
+            useApp.setState({ status });
+            onClose();
+          } catch (error) {
+            setError((error as Error).message);
+          } finally {
+            setSaving(false);
+          }
+        }}
+      >
+        <div className="form-content">
+          <div className="segmented" aria-label="Область SSL">
+            <button
+              type="button"
+              className={scope === "all" ? "selected" : ""}
+              aria-pressed={scope === "all"}
+              onClick={() => setScope("all")}
+            >
+              Все хосты
+            </button>
+            <button
+              type="button"
+              className={scope === "selected" ? "selected" : ""}
+              aria-pressed={scope === "selected"}
+              onClick={() => setScope("selected")}
+            >
+              Только выбранные
+            </button>
+          </div>
+          {scope === "selected" && (
+            <label>
+              Хосты для расшифровки
+              <textarea
+                rows={6}
+                value={hosts}
+                onChange={(event) => setHosts(event.target.value)}
+                placeholder={"api.example.com\n*.example.net\nexample.org:8443"}
+              />
+            </label>
+          )}
+          <p className="field-hint">
+            Один домен или IP на строку, порт необязателен. Маска *.example.com
+            включает поддомены; корневой example.com добавляется отдельно.
+            Пустой список выбранных хостов ничего не расшифровывает.
+          </p>
+          <p className="field-hint">
+            Выбор по пути невозможен до расшифровки HTTPS. Остальные соединения
+            проходят зашифрованными. Изменения действуют на новые соединения —
+            переподключите клиент. Доверие сертификату CHLS по-прежнему
+            требуется.
+          </p>
+          {error && (
+            <div className="inline-error" role="alert">
+              {error}
+            </div>
+          )}
+        </div>
+        <footer className="modal-footer">
+          <button type="button" className="button" onClick={onClose}>
+            Отмена
+          </button>
+          <button type="submit" className="button primary" disabled={saving}>
+            {saving ? "Сохранение…" : "Сохранить SSL"}
+          </button>
+        </footer>
+      </form>
+    </Modal>
   );
 }
 
@@ -993,11 +1194,13 @@ function Traffic({
   onRule,
   onConnect,
   onFocusHost,
+  onSSLHost,
   focusedHosts,
   archived = false,
 }: {
   archived?: boolean;
   onFocusHost: (host: string) => void;
+  onSSLHost: (host: string) => void;
   focusedHosts: string[];
   flows: Flow[];
   onRule: (rule: Rule) => void;
@@ -1035,7 +1238,7 @@ function Traffic({
       return;
     }
     setLoading(true);
-    setDetail(null);
+    setDetail((current) => (current?.id === selected ? current : null));
     setDetailError("");
     api<Detail>(`/flows/${selected}`)
       .then((d) => {
@@ -1069,7 +1272,7 @@ function Traffic({
         style={{ flex: hasInspector ? `0 0 ${trafficSize.size}px` : 1 }}
       >
         <div className="table-head traffic-row">
-          <span>Метод</span>
+          <span>Тип</span>
           <span>Запрос</span>
           <span>Статус</span>
           <span>Время</span>
@@ -1124,20 +1327,34 @@ function Traffic({
                       setSelected(flow.id);
                       setContext({
                         x: Math.min(e.clientX, window.innerWidth - 220),
-                        y: Math.min(e.clientY, window.innerHeight - 200),
+                        y: Math.min(e.clientY, window.innerHeight - 240),
                         flow,
                       });
                     }}
                   >
                     <span
-                      className={`method ${flow.method === "GET" ? "get" : ""}`}
+                      className={`method ${recordLabel(flow) === "GET" ? "get" : ""}`}
                     >
-                      {flow.method}
+                      {recordLabel(flow)}
                     </span>
-                    <span className="url-cell" title={flow.url}>
+                    <span className="url-cell" title={recordLocation(flow)}>
                       <span className="flow-host">{flow.host}</span>
-                      <span className="flow-path">{flow.path}</span>
-                      {flow.rules.length > 0 && (
+                      <span className="flow-path">
+                        {flow.kind === "connection"
+                          ? `:${flow.port}`
+                          : flow.path}
+                      </span>
+                      {flow.kind === "connection" && (
+                        <span
+                          className="encrypted-indicator"
+                          role="img"
+                          aria-label="Зашифрованное соединение"
+                          title="Зашифрованное соединение — содержимое недоступно"
+                        >
+                          <LockKeyhole size={12} aria-hidden="true" />
+                        </span>
+                      )}
+                      {flow.kind === "http" && flow.rules.length > 0 && (
                         <SlidersHorizontal
                           size={12}
                           className="rule-indicator"
@@ -1145,11 +1362,17 @@ function Traffic({
                       )}
                     </span>
                     <span
-                      className={`http-status ${flow.error || (flow.status || 0) >= 400 ? "failure" : flow.status ? "success" : ""}`}
+                      className={`http-status ${flow.error || (recordStatus(flow) || 0) >= 400 ? "failure" : recordStatus(flow) ? "success" : ""}`}
                     >
                       {flow.error
                         ? "ERR"
-                        : flow.status || <span className="pending-dot" />}
+                        : flow.kind === "connection"
+                          ? flow.state === "open"
+                            ? "…"
+                            : "—"
+                          : recordStatus(flow) || (
+                              <span className="pending-dot" />
+                            )}
                     </span>
                     <span className="numeric">
                       {flow.duration !== null ? `${flow.duration} ms` : "—"}
@@ -1194,7 +1417,7 @@ function Traffic({
           )}
         </div>
         <div className="table-bottom">
-          <span>{flows.length} запросов</span>
+          <span>{flows.length} записей</span>
           <span>Последние сверху</span>
         </div>
       </section>
@@ -1218,12 +1441,16 @@ function Traffic({
               <X size={15} />
             </IconButton>
           </div>
-          {loading ? (
+          {loading && !detail ? (
             <div className="loading">
               <LoaderCircle size={20} className="spin" />
             </div>
           ) : detail ? (
-            <MemoInspector detail={detail} onRule={onRule} />
+            detail.kind === "connection" ? (
+              <EncryptedInspector detail={detail} />
+            ) : (
+              <MemoInspector detail={detail} onRule={onRule} />
+            )
           ) : (
             <div className="inline-error">{detailError}</div>
           )}
@@ -1241,18 +1468,28 @@ function Traffic({
           className="context-menu"
           style={{ left: context.x, top: context.y }}
         >
-          {(["rewrite", "map_local", "block"] as Rule["kind"][]).map((kind) => {
-            const Icon = iconFor[kind];
-            return (
-              <button
-                key={kind}
-                onClick={() => onRule(newRule(kind, context.flow))}
-              >
-                <Icon size={14} />
-                Создать {kindLabel[kind]}
-              </button>
-            );
-          })}
+          {context.flow.kind === "http" &&
+            (["rewrite", "map_local", "block"] as Rule["kind"][]).map(
+              (kind) => {
+                const Icon = iconFor[kind];
+                return (
+                  <button
+                    key={kind}
+                    onClick={() => {
+                      if (context.flow.kind === "http")
+                        onRule(newRule(kind, context.flow));
+                    }}
+                  >
+                    <Icon size={14} />
+                    Создать {kindLabel[kind]}
+                  </button>
+                );
+              },
+            )}
+          <button onClick={() => onSSLHost(context.flow.host)}>
+            <ShieldCheck size={14} />
+            Расшифровывать SSL для хоста…
+          </button>
           <button onClick={() => onFocusHost(context.flow.host)}>
             <Filter size={14} />
             {focusedHosts.includes(context.flow.host)
@@ -1263,7 +1500,7 @@ function Traffic({
           <button
             onClick={() =>
               navigator.clipboard
-                .writeText(context.flow.url)
+                .writeText(recordLocation(context.flow))
                 .catch((e) => useApp.getState().setError(e.message))
             }
           >
@@ -1276,11 +1513,63 @@ function Traffic({
   );
 }
 
+function EncryptedInspector({ detail }: { detail: ConnectionFlow }) {
+  return (
+    <>
+      <div className="request-summary">
+        <div className="summary-line">
+          <ShieldOff size={14} />
+          <strong>Зашифровано · {detail.protocol}</strong>
+          <span className="muted">
+            {detail.state === "error"
+              ? "Ошибка"
+              : detail.state === "open"
+                ? "Соединение открыто"
+                : "Завершено"}
+          </span>
+        </div>
+        <div className="full-url">{detail.endpoint}</div>
+        <div className="request-meta">
+          {time(detail.started)} · {detail.client}
+        </div>
+      </div>
+      {detail.error && <div className="inline-error">{detail.error}</div>}
+      <div className="encrypted-details">
+        {[
+          ["Отправлено", size(detail.bytes_sent || 0)],
+          ["Получено", size(detail.bytes_received || 0)],
+          ["Всего", size(detail.size)],
+          [
+            "Длительность",
+            detail.duration !== null ? `${detail.duration} ms` : "В процессе",
+          ],
+          ["Транспорт", detail.transport?.toUpperCase() || "TCP"],
+        ].map(([label, value]) => (
+          <div className="encrypted-detail" key={label}>
+            <span>{label}</span>
+            <code>{value}</code>
+          </div>
+        ))}
+      </div>
+      <p className="padded muted">
+        {detail.experimental && "UDP-захват — экспериментальная функция. "}
+        {detail.ssl_reason === "not_selected"
+          ? "Хост не выбран для расшифровки SSL. "
+          : detail.ssl_reason === "disabled"
+            ? "При открытии соединения SSL был выключен. "
+            : "Расшифровка SSL к соединению не применялась. "}
+        HTTP-запросы, заголовки и тела недоступны. Для просмотра содержимого
+        включите SSL для нужного хоста и переподключите клиент.
+      </p>
+    </>
+  );
+}
+
 function Inspector({
   detail,
   onRule,
 }: {
-  detail: Detail;
+  detail: HttpDetail;
   onRule: (rule: Rule) => void;
 }) {
   const [side, setSide] = useState<"request" | "response">("response"),

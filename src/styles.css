@@ -980,6 +980,12 @@ button .spin {
   min-width: 0;
   flex: 1;
 }
+.encrypted-indicator {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--muted);
+  margin-left: 6px;
+}
 .rule-indicator {
   color: var(--accent);
   margin-left: 6px;
@@ -1194,6 +1200,26 @@ button .spin {
 .headers-list {
   padding: 5px 16px 25px;
   overflow: auto;
+}
+.encrypted-details {
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+.encrypted-detail {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.encrypted-detail > span {
+  color: var(--muted);
+}
+.encrypted-detail code {
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 .header-entry {
   padding: 12px 0;

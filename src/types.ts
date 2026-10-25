@@ -51,25 +51,41 @@ export interface Trace {
   matched?: boolean;
   matches?: number;
 }
-export interface Flow {
+export interface RecordBase {
   id: string;
   session: string;
   started: number;
+  host: string;
+  duration: number | null;
+  size: number;
+  client: string;
+  error: string | null;
+  state: string;
+}
+export interface HttpFlow extends RecordBase {
+  kind: "http";
   method: string;
   url: string;
-  host: string;
   path: string;
   original_host?: string;
   original_path?: string;
   original_method?: string;
   status: number | null;
-  duration: number | null;
-  size: number;
-  client: string;
-  error: string | null;
   rules: Trace[];
-  state: string;
 }
+export interface ConnectionFlow extends RecordBase {
+  kind: "connection";
+  state: "open" | "closed" | "error";
+  protocol: string;
+  endpoint: string;
+  port: number;
+  transport: string;
+  bytes_sent: number;
+  bytes_received: number;
+  experimental?: boolean;
+  ssl_reason?: "disabled" | "not_selected";
+}
+export type Flow = HttpFlow | ConnectionFlow;
 export interface Message {
   headers: [string, string][];
   size: number;
@@ -82,14 +98,17 @@ export interface Message {
   truncated: boolean;
   body_file: string | null;
 }
-export interface Detail extends Flow {
-  request: Message;
+export interface HttpDetail extends HttpFlow {
+  request: Message | null;
   response: Message | null;
   original_request: Message | null;
   original_response: Message | null;
 }
+export type Detail = HttpDetail | ConnectionFlow;
 export interface Config {
   ssl_proxying?: boolean;
+  ssl_scope?: "all" | "selected";
+  ssl_hosts?: string[];
   http: boolean;
   wireguard: boolean;
   port: number;
@@ -143,7 +162,11 @@ declare global {
       } | null>;
       saveText: (name: string, text: string) => Promise<boolean>;
       download: (route: string, name: string) => Promise<boolean>;
-      exportSession: (id: string, name: string) => Promise<boolean>;
+      exportSession: (
+        id: string,
+        name: string,
+        format?: "http" | "charles",
+      ) => Promise<boolean>;
       importRules: () => Promise<unknown>;
       onEvents: (callback: (events: BackendEvent[]) => void) => () => void;
     };

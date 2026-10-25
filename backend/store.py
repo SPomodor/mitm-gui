@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 
 from .hosts import readable_record
+from .records import normalize_record
 
 
 class Store:
@@ -60,15 +61,20 @@ class Store:
         return item, [row[0] for row in rows]
 
     def save(self, summary, detail):
-        self.db.execute('INSERT OR REPLACE INTO flows VALUES (?,?,?,?,?)', (summary['id'], summary['session'], summary['started'], json.dumps(summary), json.dumps(detail)))
-        self.db.commit()
+        self.save_many([(summary, detail)])
+
+    def save_many(self, records):
+        with self.db:
+            self.db.executemany('INSERT OR REPLACE INTO flows VALUES (?,?,?,?,?)',
+                                [(s['id'], s['session'], s['started'], json.dumps(s), json.dumps(d))
+                                 for s, d in records])
 
     def flows(self, session, limit=10000):
-        return [readable_record(json.loads(row[0])) for row in self.db.execute('SELECT summary FROM flows WHERE session=? ORDER BY started DESC LIMIT ?', (session, limit))]
+        return [readable_record(normalize_record(json.loads(row[0]))) for row in self.db.execute('SELECT summary FROM flows WHERE session=? ORDER BY started DESC LIMIT ?', (session, limit))]
 
     def detail(self, flow_id):
         row = self.db.execute('SELECT detail FROM flows WHERE id=?', (flow_id,)).fetchone()
-        return readable_record(json.loads(row[0])) if row else None
+        return readable_record(normalize_record(json.loads(row[0]))) if row else None
 
     def clear(self, session):
         ids = {r[0] for r in self.db.execute('SELECT id FROM flows WHERE session=?', (session,))}

@@ -119,7 +119,7 @@ def test_real_capture_rules_and_wireguard(environment):
     with httpx.Client(proxy=f'http://127.0.0.1:{port}') as proxy:
         result = proxy.get(upstream + '/domain', headers={'Host': 'api.example.test'})
         assert result.status_code == 418
-        domain_flow = next(f for f in client.get('/flows').json() if f['path'] == '/domain')
+        domain_flow = next(f for f in client.get('/flows').json() if f.get('path') == '/domain')
         assert domain_flow['host'] == 'api.example.test'
         assert 'api.example.test/domain' in domain_flow['url']
         assert domain_flow['destination_host'] == '127.0.0.1'
@@ -137,7 +137,7 @@ def test_real_capture_rules_and_wireguard(environment):
         result = proxy.get(upstream + '/gzip')
         assert result.json()['enabled'] is True
         flows = client.get('/flows').json()
-        gzip_flow = next(f for f in flows if f['path'] == '/gzip')
+        gzip_flow = next(f for f in flows if f.get('path') == '/gzip')
         detail = client.get('/flows/' + gzip_flow['id']).json()
         assert json.loads(detail['response']['text'])['enabled'] is True
         assert json.loads(detail['original_response']['text'])['enabled'] is False
@@ -455,7 +455,7 @@ def test_recording_clear_delete_query_and_ssl(environment):
     with ThreadPoolExecutor() as pool:
         future = pool.submit(httpx.get, upstream + '/slow-clear', proxy=f'http://127.0.0.1:{port}')
         for _ in range(200):
-            if any(f['path'] == '/slow-clear' for f in client.get('/flows').json()):
+            if any(f.get('path') == '/slow-clear' for f in client.get('/flows').json()):
                 break
             time.sleep(.02)
         else:
@@ -489,7 +489,51 @@ def test_recording_clear_delete_query_and_ssl(environment):
         assert client.post('/capture/ssl', json={'enabled': False}).json()['config']['ssl_proxying'] is False
         with httpx.Client(proxy=f'http://127.0.0.1:{port}', verify=False, trust_env=False) as proxy:
             assert proxy.get(f'https://127.0.0.1:{tls_origin.server_port}/ssl-check').status_code == 200
-            assert not any(f['path'] == '/ssl-check' for f in client.get('/flows').json())
+            assert not any(f.get('path') == '/ssl-check' for f in client.get('/flows').json())
+            for _ in range(100):
+                tunnels = [f for f in client.get('/flows').json() if f.get('kind') == 'connection']
+                if tunnels and tunnels[0]['state'] == 'closed':
+                    break
+                time.sleep(.02)
+            assert len(tunnels) == 1
+            tunnel = tunnels[0]
+            assert tunnel['protocol'] == 'TLS'
+            assert tunnel['port'] == tls_origin.server_port
+            assert tunnel['bytes_sent'] > 0 and tunnel['bytes_received'] > 0
+            assert tunnel['size'] == tunnel['bytes_sent'] + tunnel['bytes_received']
+            assert tunnel['state'] == 'closed' and tunnel['duration'] is not None
+            assert 'status' not in tunnel and 'rules' not in tunnel and 'method' not in tunnel
+            detail = client.get(f"/flows/{tunnel['id']}").json()
+            assert 'request' not in detail and 'response' not in detail
+            assert client.get(f"/flows/{tunnel['id']}/body/request").status_code == 404
+            assert not list((root / 'bodies').glob(tunnel['id'] + '-*'))
+            session = client.get('/status').json()['session']
+            strict = client.get(f'/sessions/{session}/export').json()['log']
+            assert not any(e.get('_chls', {}).get('id') == tunnel['id'] for e in strict['entries'])
+            har = client.get(f'/sessions/{session}/export?format=charles').json()['log']
+            assert '_chlsTunnels' not in har
+            imported_tunnel = next(e for e in har['entries'] if e.get('_chls', {}).get('id') == tunnel['id'])
+            assert imported_tunnel['request']['method'] == 'CONNECT'
+            assert imported_tunnel['request']['url'] == f"https://127.0.0.1:{tls_origin.server_port}/"
+            assert imported_tunnel['response']['status'] == 0
+            assert imported_tunnel['response']['content']['size'] == tunnel['bytes_received']
+            assert 'text' not in imported_tunnel['response']['content']
+            assert all(e['request']['method'] != 'TLS' for e in har['entries'])
+            if os.environ.get('CHLS_TEST_CHARLES_JAR'):
+                from xml.etree import ElementTree
+                exported = root / 'encrypted-export.har'
+                exported.write_text(json.dumps({'log': har}), encoding='utf-8')
+                converted = exported.with_suffix('.xml')
+                jar = Path(os.environ['CHLS_TEST_CHARLES_JAR'])
+                result = subprocess.run([os.environ.get('CHLS_TEST_JAVA', 'java'),
+                                         '-Djava.awt.headless=true', f'-Djava.library.path={jar.parent}',
+                                         '-jar', str(jar), 'convert', str(exported), str(converted)],
+                                        capture_output=True, text=True, timeout=45)
+                assert result.returncode == 0, result.stdout + result.stderr
+                transactions = ElementTree.parse(converted).findall('transaction')
+                actual_tunnel = next(t for t in transactions if t.get('method') == 'CONNECT')
+                assert int(actual_tunnel.get('port')) == tls_origin.server_port
+                assert int(actual_tunnel.get('totalSize')) == tunnel['size']
             assert proxy.get(upstream + '/ssl-check').status_code == 418
         assert client.post('/capture/ssl', json={'enabled': True}).json()['config']['ssl_proxying'] is True
         with httpx.Client(proxy=f'http://127.0.0.1:{port}', verify=False, trust_env=False) as proxy:
@@ -497,3 +541,120 @@ def test_recording_clear_delete_query_and_ssl(environment):
     finally:
         tls_origin.shutdown()
         client.put('/rules', json=[])
+
+
+def test_partial_tls_handshake_is_recorded_without_http_fields(environment):
+    client, port, _, upstream, root = environment
+    client.post('/recording', json={'enabled': True}).raise_for_status()
+    client.post('/capture/start', json={'port': port, 'lan': False, 'ssl_proxying': False}).raise_for_status()
+    session = client.post('/sessions').json()['id']
+    target = int(upstream.rsplit(':', 1)[1])
+    with socket.create_connection(('127.0.0.1', port), timeout=3) as sock:
+        sock.sendall(f'CONNECT 127.0.0.1:{target} HTTP/1.1\r\nHost: 127.0.0.1:{target}\r\n\r\n'.encode())
+        assert b'200' in sock.recv(4096)
+        sock.sendall(bytes.fromhex('1603010100010000fc03'))
+    for _ in range(100):
+        records = client.get('/flows', params={'session': session}).json()
+        if records and records[0]['state'] != 'open':
+            break
+        time.sleep(.02)
+    assert len(records) == 1
+    item = records[0]
+    assert item['kind'] == 'connection' and item['protocol'] == 'TLS'
+    assert item['bytes_sent'] == 10
+    assert item['state'] in ('closed', 'error')
+    assert all(key not in item for key in ('method', 'url', 'path', 'status', 'rules'))
+    assert client.get(f'/sessions/{session}/export').json()['log']['entries'] == []
+    assert len(client.get(f'/sessions/{session}/export?format=charles').json()['log']['entries']) == 1
+    assert client.get(f'/sessions/{session}/export?format=invalid').status_code == 422
+    client.post('/capture/ssl', json={'enabled': True})
+
+
+def test_selected_ssl_hosts_use_sni_and_leave_other_tls_opaque(environment):
+    client, port, _, upstream, root = environment
+    client.post('/recording', json={'enabled': True}).raise_for_status()
+    client.post('/capture/start', json={'port': port, 'lan': False}).raise_for_status()
+    client.post('/mocks/control', json={'action': 'disable'})
+    client.post('/sessions').raise_for_status()
+    origin = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Upstream)
+    server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_context.load_cert_chain(str(root / 'certificates' / 'mitmproxy-ca.pem'))
+    origin.socket = server_context.wrap_socket(origin.socket, server_side=True)
+    threading.Thread(target=origin.serve_forever, daemon=True).start()
+    target = origin.server_port
+    def tls_get(name):
+        raw = socket.create_connection(('127.0.0.1', port), timeout=5)
+        try:
+            raw.sendall(f'CONNECT 127.0.0.1:{target} HTTP/1.1\r\nHost: 127.0.0.1:{target}\r\n\r\n'.encode())
+            header = b''
+            while b'\r\n\r\n' not in header:
+                header += raw.recv(4096)
+            assert b'200' in header
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+            with context.wrap_socket(raw, server_hostname=name) as secure:
+                secure.sendall(f'GET /ssl-policy-check HTTP/1.1\r\nHost: {name}\r\nConnection: close\r\n\r\n'.encode())
+                response = b''
+                while True:
+                    data = secure.recv(4096)
+                    if not data:
+                        break
+                    response += data
+                return int(response.split(b' ')[1])
+        finally:
+            raw.close()
+    try:
+        client.put('/rules', json=[dict(id='ssl-scope', name='scope', kind='block', host='',
+                                      path='/ssl-policy-check', query='', match='exact', status=418)]).raise_for_status()
+        settings = {'enabled': True, 'scope': 'selected', 'hosts': [f'allowed.example.test:{target}', f'*.wild.example.test:{target}']}
+        response = client.post('/capture/ssl', json=settings)
+        assert response.status_code == 200, response.text
+        assert tls_get('allowed.example.test') == 418
+        assert tls_get('a.wild.example.test') == 418
+        assert tls_get('excluded.example.test') == 200
+        assert tls_get('wild.example.test') == 200
+        saved = client.get('/flows').json()
+        assert len([item for item in saved if item['kind'] == 'http']) == 2
+        opaque = [item for item in saved if item['kind'] == 'connection']
+        assert {item['host'] for item in opaque} == {'excluded.example.test', 'wild.example.test'}
+        assert all(item['ssl_reason'] == 'not_selected' for item in opaque)
+        persisted = json.loads((root/'capture.json').read_text('utf-8'))
+        assert persisted['ssl_scope'] == 'selected' and len(persisted['ssl_hosts']) == 2
+        assert client.post('/capture/ssl', json={'enabled': False}).json()['config']['ssl_hosts'] == persisted['ssl_hosts']
+        assert tls_get('allowed.example.test') == 200
+        assert client.post('/capture/ssl', json={'enabled': True}).json()['config']['ssl_scope'] == 'selected'
+        before = client.get('/status').json()['config']
+        assert client.post('/capture/ssl', json={'enabled': True, 'hosts': ['https://bad/path']}).status_code == 422
+        assert client.get('/status').json()['config'] == before
+        client.post('/capture/ssl', json={'enabled': True, 'scope': 'selected', 'hosts': []}).raise_for_status()
+        assert tls_get('allowed.example.test') == 200
+        # Partial ClientHello must also remain visible while a domain decision is pending.
+        client.post('/capture/ssl', json=settings).raise_for_status()
+        with socket.create_connection(('127.0.0.1', port), timeout=3) as raw:
+            raw.sendall(f'CONNECT 127.0.0.1:{target} HTTP/1.1\r\nHost: 127.0.0.1:{target}\r\n\r\n'.encode())
+            assert b'200' in raw.recv(4096)
+            raw.sendall(bytes.fromhex('1603010100010000fc03'))
+        for _ in range(100):
+            items = client.get('/flows').json()
+            if any('host selection' in (item.get('error') or '') for item in items):
+                break
+            time.sleep(.02)
+        assert any('host selection' in (item.get('error') or '') for item in items)
+    finally:
+        origin.shutdown()
+        client.put('/rules', json=[])
+        client.post('/capture/ssl', json={'enabled': True, 'scope': 'all', 'hosts': []})
+
+
+def test_ssl_scope_and_hosts_survive_engine_restart(tmp_path):
+    api_port, proxy_port = free_port(), free_port()
+    (tmp_path/'capture.json').write_text(json.dumps({'http': True, 'wireguard': False, 'port': proxy_port, 'lan': False}), encoding='utf-8')
+    with restarted_engine(tmp_path, api_port) as client:
+        result = client.post('/capture/ssl', json={'enabled': True, 'scope': 'selected', 'hosts': ['API.Example.Test', '*.example.net:8443']})
+        assert result.status_code == 200, result.text
+    with restarted_engine(tmp_path, api_port) as client:
+        config = client.get('/status').json()['config']
+        assert config['ssl_proxying'] is True
+        assert config['ssl_scope'] == 'selected'
+        assert config['ssl_hosts'] == ['api.example.test', '*.example.net:8443']

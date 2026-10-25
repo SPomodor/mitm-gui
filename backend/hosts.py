@@ -51,6 +51,8 @@ def display_url(original: str, host: str) -> str:
 
 def readable_record(record: dict) -> dict:
     """Recover names in older history when the URL or saved Host contains one."""
+    if record.get('kind') == 'connection':
+        return record
     request = record.get('request') or {}
     authority = next((value for key, value in request.get('headers', [])
                       if key.lower() in ('host', ':authority')), '')

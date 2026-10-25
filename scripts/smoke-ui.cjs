@@ -3,6 +3,8 @@ const { spawn } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs/promises");
 const http = require("node:http");
+const https = require("node:https");
+const tls = require("node:tls");
 const net = require("node:net");
 const dgram = require("node:dgram");
 const { gzipSync } = require("node:zlib");
@@ -146,7 +148,12 @@ async function unusedPort() {
     async function saveEditor(editor) {
       await Promise.all([
         editor.waitForEvent("close"),
-        editor.getByRole("button", { name: "Сохранить правило" }).click(),
+        editor
+          .getByRole("button", { name: "Сохранить правило" })
+          .click()
+          .catch((error) => {
+            if (!editor.isClosed()) throw error;
+          }),
       ]);
     }
     await expect(
@@ -209,7 +216,7 @@ async function unusedPort() {
       )
       .toBe(230);
     await expect(page.locator(".topbar .toolbar-actions > button")).toHaveCount(
-      2,
+      3,
     );
     await expect(
       page.locator(".sidebar-bottom .capture-control"),
@@ -448,6 +455,81 @@ async function unusedPort() {
       page.getByRole("button", { name: "SSL выкл", exact: true }),
     ).toHaveAttribute("aria-pressed", "false");
     await page.getByRole("button", { name: "SSL выкл", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Настроить SSL", exact: true })
+      .click();
+    let sslDialog = page.getByRole("dialog", {
+      name: "Расшифровка SSL",
+      exact: true,
+    });
+    await sslDialog
+      .getByRole("button", { name: "Только выбранные", exact: true })
+      .click();
+    await sslDialog
+      .getByRole("textbox", { name: "Хосты для расшифровки", exact: true })
+      .fill("api.example.test\n*.example.net:8443");
+    await page.screenshot({
+      animations: "disabled",
+      path: path.join(output, "16-ssl-scope.png"),
+    });
+    await sslDialog
+      .getByRole("button", { name: "Сохранить SSL", exact: true })
+      .click();
+    await expect(sslDialog).toHaveCount(0);
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: "Настроить SSL", exact: true }),
+    ).toBeEnabled();
+    await page
+      .getByRole("button", { name: "Настроить SSL", exact: true })
+      .click();
+    sslDialog = page.getByRole("dialog", {
+      name: "Расшифровка SSL",
+      exact: true,
+    });
+    await expect(
+      sslDialog.getByRole("button", { name: "Только выбранные", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      sslDialog.getByRole("textbox", {
+        name: "Хосты для расшифровки",
+        exact: true,
+      }),
+    ).toHaveValue("api.example.test\n*.example.net:8443");
+    await sslDialog
+      .getByRole("textbox", { name: "Хосты для расшифровки", exact: true })
+      .fill("https://invalid.test/path");
+    await sslDialog
+      .getByRole("button", { name: "Сохранить SSL", exact: true })
+      .click();
+    await expect(sslDialog.getByRole("alert")).toBeVisible();
+    await sslDialog
+      .getByRole("button", { name: "Отмена", exact: true })
+      .click();
+    await page.locator(".flow-row").first().click({ button: "right" });
+    await page
+      .getByRole("button", {
+        name: "Расшифровывать SSL для хоста…",
+        exact: true,
+      })
+      .click();
+    sslDialog = page.getByRole("dialog", {
+      name: "Расшифровка SSL",
+      exact: true,
+    });
+    await expect(
+      sslDialog.getByRole("textbox", {
+        name: "Хосты для расшифровки",
+        exact: true,
+      }),
+    ).toHaveValue("api.example.test\n*.example.net:8443");
+    await sslDialog
+      .getByRole("button", { name: "Все хосты", exact: true })
+      .click();
+    await sslDialog
+      .getByRole("button", { name: "Сохранить SSL", exact: true })
+      .click();
+    await expect(sslDialog).toHaveCount(0);
     await page.screenshot({
       animations: "disabled",
       path: path.join(output, "03-inspector.png"),
@@ -740,7 +822,12 @@ async function unusedPort() {
     );
     await Promise.all([
       editor.waitForEvent("close"),
-      editor.getByRole("button", { name: "Отмена", exact: true }).click(),
+      editor
+        .getByRole("button", { name: "Отмена", exact: true })
+        .click()
+        .catch((error) => {
+          if (!editor.isClosed()) throw error;
+        }),
     ]);
     await page
       .getByRole("navigation")
@@ -832,6 +919,14 @@ async function unusedPort() {
           name: "Экспортировать HAR: Phone debugging",
           exact: true,
         })
+        .click();
+      await expect(
+        page.getByRole("checkbox", {
+          name: "Включить сводки соединений для Charles",
+        }),
+      ).not.toBeChecked();
+      await page
+        .getByRole("button", { name: "Сохранить HAR", exact: true })
         .click();
       await expect
         .poll(async () => {
@@ -1105,6 +1200,163 @@ async function unusedPort() {
       .getByRole("navigation")
       .getByRole("button", { name: /^Правила/ })
       .click();
+    await page
+      .getByRole("navigation")
+      .getByRole("button", { name: /^Трафик/ })
+      .click();
+    await page.getByRole("button", { name: "SSL вкл", exact: true }).click();
+    const ca = await fs.readFile(
+      path.join(engineData, "certificates/mitmproxy-ca.pem"),
+    );
+    const encryptedOrigin = https.createServer(
+      { key: ca, cert: ca },
+      (_, res) => {
+        res.setHeader("Connection", "close");
+        res.end("opaque-response");
+      },
+    );
+    await new Promise((resolve) =>
+      encryptedOrigin.listen(0, "127.0.0.1", resolve),
+    );
+    try {
+      const encryptedPort = encryptedOrigin.address().port;
+      await new Promise((resolve, reject) => {
+        const raw = net.connect(proxyPort, "127.0.0.1");
+        raw.setTimeout(10000, () =>
+          raw.destroy(new Error("TLS smoke timed out")),
+        );
+        raw.on("error", reject);
+        raw.once("connect", () =>
+          raw.write(
+            `CONNECT 127.0.0.1:${encryptedPort} HTTP/1.1\r\nHost: 127.0.0.1:${encryptedPort}\r\n\r\n`,
+          ),
+        );
+        let headers = "";
+        const connected = (chunk) => {
+          headers += chunk.toString();
+          if (!headers.includes("\r\n\r\n")) return;
+          raw.removeListener("data", connected);
+          if (!headers.startsWith("HTTP/1.1 200"))
+            return reject(new Error(headers));
+          const secure = tls.connect({
+            socket: raw,
+            servername: "encrypted.example.test",
+            rejectUnauthorized: false,
+          });
+          secure.on("error", reject);
+          let response = "";
+          secure.on("data", (data) => {
+            response += data.toString();
+          });
+          secure.once("secureConnect", () =>
+            secure.write(
+              "GET /opaque HTTP/1.1\r\nHost: encrypted.example.test\r\nConnection: close\r\n\r\n",
+            ),
+          );
+          secure.once("end", () => {
+            secure.destroy();
+            response.includes("opaque-response")
+              ? resolve()
+              : reject(new Error("Opaque relay lost the response"));
+          });
+        };
+        raw.on("data", connected);
+      });
+      const encryptedRow = page
+        .locator(".flow-row")
+        .filter({ hasText: "encrypted.example.test" });
+      await expect(
+        encryptedRow.getByRole("img", {
+          name: "Зашифрованное соединение",
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(encryptedRow).not.toContainText("Зашифровано");
+      await encryptedRow.click();
+      await expect(page.locator(".inspector")).toContainText(
+        "Зашифровано · TLS",
+      );
+      await expect(page.locator(".inspector")).toContainText("Отправлено");
+      await expect(page.locator(".inspector")).toContainText("Получено");
+      await expect(page.locator(".inspector")).toContainText("Завершено");
+      await expect(encryptedRow.locator(".http-status")).toHaveText("—");
+      await expect(encryptedRow.locator(".numeric").last()).not.toHaveText("—");
+      await expect(
+        page
+          .locator(".inspector")
+          .getByRole("button", { name: "Правило", exact: true }),
+      ).toHaveCount(0);
+      await page.screenshot({
+        animations: "disabled",
+        path: path.join(output, "14-encrypted-tunnel.png"),
+      });
+      if (!portable) {
+        const current = await page.evaluate(async () => {
+          const status = await window.chls.api("/status");
+          const sessions = await window.chls.api("/sessions");
+          return sessions.find((item) => item.id === status.session);
+        });
+        for (const compatibility of [false, true]) {
+          const exportPath = path.join(
+            output,
+            `har-${compatibility ? "charles" : "http"}-${Date.now()}.har`,
+          );
+          await application.evaluate(({ dialog }, filePath) => {
+            dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+          }, exportPath);
+          await page
+            .getByRole("button", {
+              name: `Экспортировать HAR: ${current.name}`,
+              exact: true,
+            })
+            .click();
+          const checkbox = page.getByRole("checkbox", {
+            name: "Включить сводки соединений для Charles",
+          });
+          await expect(checkbox).not.toBeChecked();
+          if (compatibility) {
+            await checkbox.check();
+            await page.screenshot({
+              animations: "disabled",
+              path: path.join(output, "15-har-export.png"),
+            });
+          }
+          await page
+            .getByRole("button", { name: "Сохранить HAR", exact: true })
+            .click();
+          await expect
+            .poll(async () => {
+              try {
+                return (
+                  JSON.parse(await fs.readFile(exportPath, "utf8")).log !==
+                  undefined
+                );
+              } catch {
+                return false;
+              }
+            })
+            .toBe(true);
+          const log = JSON.parse(await fs.readFile(exportPath, "utf8")).log;
+          if (
+            log.entries.some((entry) => entry._chls?.kind === "connection") !==
+            compatibility
+          )
+            throw new Error(
+              "HAR export mode did not control connection summaries",
+            );
+          if ("_chlsTunnels" in log)
+            throw new Error("Legacy duplicate connection list was exported");
+          await expect(page.getByRole("dialog")).toHaveCount(0);
+        }
+      }
+    } finally {
+      await new Promise((resolve) => encryptedOrigin.close(resolve));
+    }
+    await page.getByRole("button", { name: "SSL выкл", exact: true }).click();
+    await page
+      .getByRole("navigation")
+      .getByRole("button", { name: /^Правила/ })
+      .click();
     await page.getByRole("button", { name: "Остановить", exact: true }).click();
     await expect(
       page.getByRole("button", { name: "Начать захват", exact: true }),
@@ -1167,6 +1419,13 @@ async function unusedPort() {
           "host focus filters display without dropping capture",
           "recording pause keeps proxy working and does not save requests",
           "SSL toggle",
+          "SSL selected-host settings persist, validate input and open from traffic context menu",
+          "encrypted TLS relay, history and connection inspector",
+          ...(!portable
+            ? [
+                "default HTTP-only HAR and explicit Charles compatibility export",
+              ]
+            : []),
           "pasted URL splits host, path and query",
           "clear session traffic through app dialog",
           "delete selected old session and return to current session",

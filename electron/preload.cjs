@@ -11,7 +11,8 @@ contextBridge.exposeInMainWorld("chls", {
   importMockScript: () => ipcRenderer.invoke("import-mock-script"),
   saveText: (name, text) => ipcRenderer.invoke("save-text", name, text),
   download: (route, name) => ipcRenderer.invoke("download", route, name),
-  exportSession: (id, name) => ipcRenderer.invoke("export-session", id, name),
+  exportSession: (id, name, format = "http") =>
+    ipcRenderer.invoke("export-session", id, name, format),
   importRules: () => ipcRenderer.invoke("import-rules"),
   onEvents: (callback) => {
     const listener = (_, events) => callback(events);

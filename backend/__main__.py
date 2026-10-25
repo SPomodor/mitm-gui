@@ -7,6 +7,7 @@ import os
 import re
 import socket
 import time
+from typing import Literal
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -16,13 +17,16 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 from mitmproxy import http, options
 from mitmproxy.tools.dump import DumpMaster
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .rules import Rule, apply_rules
 from .store import Store
 from .har import export_har
 from .hosts import display_url, flow_host
 from .mocks import MockModule, MockError, compile_scenario, validate_scope
+from .tunnels import TunnelCapture, OpaqueNextLayer
+from .records import begin_recording, can_record
+from .ssl_policy import normalize_hosts, should_decrypt
 
 MAX_BODY = 8 * 1024 * 1024
 MAX_PREVIEW = 256 * 1024
@@ -34,12 +38,19 @@ ROOT.mkdir(parents=True, exist_ok=True)
 
 class CaptureConfig(BaseModel):
     ssl_proxying: bool = True
+    ssl_scope: Literal['all', 'selected'] = 'all'
+    ssl_hosts: list[str] = Field(default_factory=list)
     http: bool = True
     wireguard: bool = False
     port: int = Field(default=8080, ge=1024, le=65535)
     wg_port: int = Field(default=51820, ge=1024, le=65535)
     lan: bool = True
     endpoint: str = ''
+
+    @field_validator('ssl_hosts')
+    @classmethod
+    def validate_ssl_hosts(cls, value):
+        return normalize_hosts(value)
 
 
 class Engine:
@@ -145,18 +156,15 @@ class CaptureAddon:
 
     def tls_clienthello(self, data):
         # Tunnel TLS unchanged; ordinary HTTP and listeners remain active.
-        data.ignore_connection = not self.engine.config.ssl_proxying
+        destination, port = data.context.server.address or ('', 443)
+        decision = self.engine.tunnels.decisions.pop(data.context.client.id, None)
+        data.ignore_connection = not (decision if decision is not None else should_decrypt(self.engine.config, data.client_hello.sni, port, destination))
 
     def requestheaders(self, flow):
-        session = self.engine.store.session
-        flow.metadata.update(session=session, recording=self.engine.recording,
-                             generation=self.engine.generations.get(session, 0))
+        begin_recording(self.engine, flow)
 
     def can_record(self, flow):
-        session = flow.metadata.get('session')
-        return (flow.metadata.get('recording', False)
-                and flow.metadata.get('generation') == self.engine.generations.get(session, 0)
-                and self.engine.store.db.execute('SELECT 1 FROM sessions WHERE id=?', (session,)).fetchone() is not None)
+        return can_record(self.engine, flow)
 
     def request(self, flow):
         if self.can_record(flow):
@@ -186,7 +194,7 @@ class CaptureAddon:
         started = request.timestamp_start
         ended = response.timestamp_end if response else flow.timestamp_end
         host = flow_host(flow)
-        summary = {'id': flow.id, 'session': flow.metadata.get('session', self.engine.store.session), 'started': started, 'method': request.method, 'url': display_url(request.pretty_url, host), 'host': host, 'destination_host': request.host, 'path': request.path, 'status': response.status_code if response else None, 'duration': round((ended-started)*1000) if ended else None, 'size': len(response.raw_content or b'') if response else 0, 'client': str(flow.client_conn.peername[0]) if flow.client_conn.peername else '', 'error': str(flow.error) if flow.error else None, 'rules': flow.metadata.get('rules', []), 'state': 'error' if flow.error else 'complete' if response else 'pending'}
+        summary = {'kind': 'http', 'id': flow.id, 'session': flow.metadata.get('session', self.engine.store.session), 'started': started, 'method': request.method, 'url': display_url(request.pretty_url, host), 'host': host, 'destination_host': request.host, 'path': request.path, 'status': response.status_code if response else None, 'duration': round((ended-started)*1000) if ended else None, 'size': len(response.raw_content or b'') if response else 0, 'client': str(flow.client_conn.peername[0]) if flow.client_conn.peername else '', 'error': str(flow.error) if flow.error else None, 'rules': flow.metadata.get('rules', []), 'state': 'error' if flow.error else 'complete' if response else 'pending'}
         location = flow.metadata.get('rule_location', {})
         summary.update(original_host=location.get('host', host), original_path=location.get('path', request.path), original_method=location.get('method', request.method))
         detail = {**summary, 'mock': flow.metadata.get('mock'), 'request': snapshot(self.engine, flow, request, 'request'), 'response': snapshot(self.engine, flow, response, 'response'), 'original_request': flow.metadata.get('original_request'), 'original_response': flow.metadata.get('original_response')}
@@ -206,7 +214,10 @@ async def lifespan(app):
     # Issue certificates from SNI without contacting the origin, so HTTPS mocks
     # work offline. Real upstream connections still use normal TLS verification.
     engine.master.options.update(stream_large_bodies='8m', body_size_limit='64m', upstream_cert=False, connection_strategy='lazy')
-    engine.master.addons.add(CaptureAddon(engine))
+    capture = CaptureAddon(engine)
+    engine.master.addons.remove(engine.master.addons.get('nextlayer'))
+    engine.tunnels = TunnelCapture(engine)
+    engine.master.addons.add(capture, engine.tunnels, OpaqueNextLayer(engine))
     master_task = asyncio.create_task(engine.master.run())
     broadcast_task = asyncio.create_task(engine.broadcast())
     ready_task = asyncio.create_task(engine.ready.wait())
@@ -289,6 +300,11 @@ class Toggle(BaseModel):
     enabled: bool
 
 
+class SSLSettings(Toggle):
+    scope: Literal['all', 'selected'] | None = None
+    hosts: list[str] | None = None
+
+
 @app.post('/recording')
 async def recording(payload: Toggle):
     engine.recording = payload.enabled
@@ -297,9 +313,21 @@ async def recording(payload: Toggle):
 
 
 @app.post('/capture/ssl')
-async def ssl_proxying(payload: Toggle):
-    engine.config.ssl_proxying = payload.enabled
-    (ROOT / 'capture.json').write_text(engine.config.model_dump_json(indent=2), 'utf-8')
+async def ssl_proxying(payload: SSLSettings):
+    values = engine.config.model_dump()
+    values['ssl_proxying'] = payload.enabled
+    if payload.scope is not None:
+        values['ssl_scope'] = payload.scope
+    if payload.hosts is not None:
+        values['ssl_hosts'] = payload.hosts
+    try:
+        config = CaptureConfig.model_validate(values)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    temporary = (ROOT / 'capture.json').with_suffix('.tmp')
+    temporary.write_text(config.model_dump_json(indent=2), 'utf-8')
+    temporary.replace(ROOT / 'capture.json')
+    engine.config = config
     engine.publish({'type': 'status'})
     return engine.status()
 
@@ -479,18 +507,20 @@ async def rename_session(session_id: str, payload: SessionRename):
 
 
 @app.get('/sessions/{session_id}/export')
-async def session_export(session_id: str):
+async def session_export(session_id: str, format: Literal['http', 'charles'] = 'http'):
     async with EXPORT_LOCK:
+        engine.tunnels.flush()
         snapshot = engine.store.export_snapshot(session_id)
         if snapshot is None:
             raise HTTPException(404, 'Сессия не найдена')
-        file = await asyncio.to_thread(export_har, ROOT, *snapshot)
+        file = await asyncio.to_thread(export_har, ROOT, *snapshot, include_connections=format == 'charles')
     return FileResponse(file, media_type='application/json', filename='session.har',
                         background=BackgroundTask(file.unlink, missing_ok=True))
 
 
 @app.get('/flows')
 async def flows(session: str = ''):
+    engine.tunnels.flush()
     return engine.store.flows(session or engine.store.session)
 
 
@@ -505,6 +535,7 @@ async def clear(session: str):
 
 @app.get('/flows/{flow_id}')
 async def detail(flow_id: str):
+    engine.tunnels.flush()
     item = engine.store.detail(flow_id)
     if not item:
         raise HTTPException(404, 'Запрос не найден')

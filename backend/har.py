@@ -11,6 +11,8 @@ from urllib.parse import parse_qsl, urlsplit
 from mitmproxy import http
 
 from .hosts import readable_record
+from .records import normalize_record
+from .charles_har import tunnel_entry
 
 
 def date(timestamp):
@@ -67,7 +69,7 @@ def har_message(message, root, url='', request=False):
     return result
 
 
-def export_har(root: Path, session, rows):
+def export_har(root: Path, session, rows, *, include_connections=False):
     handle = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.har', delete=False)
     file = Path(handle.name)
     try:
@@ -75,9 +77,20 @@ def export_har(root: Path, session, rows):
             handle.write('{"log":')
             header = {'version': '1.2', 'creator': {'name': 'CHLS', 'version': os.environ.get('CHLS_VERSION', '0.3.0')},
                       '_chlsSession': session, 'pages': []}
+            if include_connections:
+                header['comment'] = 'Charles compatibility export: CONNECT/CONNECT-UDP entries are synthetic connection summaries, not captured HTTP requests.'
             handle.write(json.dumps(header, ensure_ascii=False)[:-1] + ',"entries":[')
-            for index, row in enumerate(rows):
-                detail = readable_record(json.loads(row))
+            index = 0
+            for row in rows:
+                detail = readable_record(normalize_record(json.loads(row)))
+                if detail['kind'] == 'connection':
+                    if not include_connections:
+                        continue
+                    if index:
+                        handle.write(',')
+                    json.dump(tunnel_entry(detail), handle, ensure_ascii=False)
+                    index += 1
+                    continue
                 entry = {'startedDateTime': date(detail['started']), 'time': detail.get('duration') or 0,
                          'request': har_message(detail['request'], root, detail['url'], True),
                          'response': har_message(detail.get('response') or {}, root),
@@ -89,6 +102,7 @@ def export_har(root: Path, session, rows):
                 if index:
                     handle.write(',')
                 json.dump(entry, handle, ensure_ascii=False)
+                index += 1
             handle.write(']}}')
         return file
     except BaseException:

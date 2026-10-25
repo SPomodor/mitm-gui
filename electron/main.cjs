@@ -337,12 +337,13 @@ ipcMain.handle("download", async (event, route, name) => {
   );
   return true;
 });
-ipcMain.handle("export-session", async (event, id, name) => {
+ipcMain.handle("export-session", async (event, id, name, format = "http") => {
   trusted(event);
   if (
     typeof id !== "string" ||
     !/^[a-zA-Z0-9-]+$/.test(id) ||
-    typeof name !== "string"
+    typeof name !== "string" ||
+    !["http", "charles"].includes(format)
   )
     throw new Error("Invalid session");
   const filename =
@@ -352,7 +353,7 @@ ipcMain.handle("export-session", async (event, id, name) => {
       .slice(0, 120) || "session";
   const result = await dialog.showSaveDialog(window, {
     title: "Экспортировать сессию",
-    defaultPath: filename + ".har",
+    defaultPath: filename + (format === "charles" ? "-charles.har" : ".har"),
     filters: [{ name: "HTTP Archive (HAR)", extensions: ["har"] }],
   });
   if (result.canceled || !result.filePath) return false;
@@ -361,7 +362,7 @@ ipcMain.handle("export-session", async (event, id, name) => {
     result.filePath + "." + randomBytes(8).toString("hex") + ".partial";
   try {
     const response = await request(
-      `/sessions/${id}/export`,
+      `/sessions/${id}/export?format=${format}`,
       "GET",
       undefined,
       300000,
