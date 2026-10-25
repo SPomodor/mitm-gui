@@ -1,6 +1,6 @@
 {
   "name": "chls",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "description": "Desktop HTTP and WireGuard debugging proxy",
   "main": "electron/main.cjs",
   "scripts": {

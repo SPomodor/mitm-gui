@@ -12,7 +12,6 @@ import {
   ChevronDown,
   ChevronRight,
   Clipboard,
-  Command,
   Copy,
   Download,
   Ellipsis,
@@ -760,9 +759,6 @@ export default function App() {
                     <Layers size={14} />К текущей сессии
                   </button>
                 )}
-                <span className="shortcut">
-                  <Command size={12} /> K
-                </span>
                 <IconButton
                   title="Очистить текущую сессию"
                   disabled={!flows.length}
