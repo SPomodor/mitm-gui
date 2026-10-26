@@ -17,6 +17,11 @@ const timer =
   timeout > 0
     ? setTimeout(() => {
         timedOut = true;
+        const diagnostic = tail
+          .replaceAll("%", "%25")
+          .replaceAll("\r", "%0D")
+          .replaceAll("\n", "%0A");
+        console.log(`::error title=CI timeout::${diagnostic}`);
         output(
           process.stderr,
           Buffer.from(`\nCI command exceeded ${timeout}ms\n`),
@@ -35,7 +40,7 @@ const timer =
     : undefined;
 function output(stream, chunk) {
   stream.write(chunk);
-  tail = (tail + chunk.toString()).slice(-3500);
+  tail = (tail + chunk.toString()).slice(-12000);
 }
 child.stdout.on("data", (chunk) => output(process.stdout, chunk));
 child.stderr.on("data", (chunk) => output(process.stderr, chunk));
