@@ -737,8 +737,12 @@ export default function App() {
       <main className="main">
         <header className="topbar">
           <div className="breadcrumbs">
-            <span>Workspace</span>
-            <ChevronRight size={13} />
+            {page !== "traffic" && (
+              <>
+                <span>Workspace</span>
+                <ChevronRight size={13} />
+              </>
+            )}
             <strong>
               {page === "traffic"
                 ? t("Трафик")
@@ -746,8 +750,66 @@ export default function App() {
                   ? t("Правила")
                   : t("Сценарии")}
             </strong>
+            {page === "traffic" && (
+              <>
+                <span className="traffic-count">{filtered.length}</span>
+                {(viewingArchive || host) && (
+                  <span
+                    className="traffic-context"
+                    title={
+                      viewingArchive
+                        ? t("Архив · {0}", [
+                            sessions.find((s) => s.id === session)?.name,
+                          ])
+                        : host
+                    }
+                  >
+                    {viewingArchive
+                      ? t("Архив · {0}", [
+                          sessions.find((s) => s.id === session)?.name,
+                        ])
+                      : host}
+                  </span>
+                )}
+              </>
+            )}
           </div>
           <div className="toolbar-actions">
+            {page === "traffic" && (
+              <>
+                {viewingArchive && status && (
+                  <IconButton
+                    title={t("К текущей сессии")}
+                    onClick={() => openSession(status.session)}
+                  >
+                    <Layers size={16} />
+                  </IconButton>
+                )}
+                <IconButton
+                  title={t("Очистить текущую сессию")}
+                  disabled={!flows.length}
+                  onClick={() =>
+                    setConfirmation({
+                      title: t("Очистить трафик?"),
+                      text: t(
+                        "Удалить все запросы выбранной сессии? Правила сохранятся.",
+                      ),
+                      action: async () => {
+                        await api(
+                          `/flows?session=${encodeURIComponent(session)}`,
+                          "DELETE",
+                        );
+                        useApp.setState({ selected: null, flows: [] });
+                        await refresh();
+                      },
+                    })
+                  }
+                >
+                  <Trash2 size={16} />
+                </IconButton>
+                <span className="toolbar-divider" aria-hidden="true" />
+              </>
+            )}
             <button
               className={`privacy-toggle ${status?.config.ssl_proxying !== false ? "enabled" : ""}`}
               disabled={!ready}
@@ -823,54 +885,6 @@ export default function App() {
         )}
         {page === "traffic" ? (
           <>
-            <div className="page-heading">
-              <div>
-                <h1>
-                  {t("Трафик")}{" "}
-                  <span className="heading-count">{filtered.length}</span>
-                </h1>
-                <p>
-                  {viewingArchive
-                    ? t("Архив · {0}", [
-                        sessions.find((s) => s.id === session)?.name,
-                      ])
-                    : host || t("Запросы и ответы ваших приложений")}
-                </p>
-              </div>
-              <div className="heading-actions">
-                {viewingArchive && status && (
-                  <button
-                    className="button subtle"
-                    onClick={() => openSession(status.session)}
-                  >
-                    <Layers size={14} />
-                    {t("К текущей сессии")}
-                  </button>
-                )}
-                <IconButton
-                  title={t("Очистить текущую сессию")}
-                  disabled={!flows.length}
-                  onClick={() =>
-                    setConfirmation({
-                      title: t("Очистить трафик?"),
-                      text: t(
-                        "Удалить все запросы выбранной сессии? Правила сохранятся.",
-                      ),
-                      action: async () => {
-                        await api(
-                          `/flows?session=${encodeURIComponent(session)}`,
-                          "DELETE",
-                        );
-                        useApp.setState({ selected: null, flows: [] });
-                        await refresh();
-                      },
-                    })
-                  }
-                >
-                  <Trash2 size={16} />
-                </IconButton>
-              </div>
-            </div>
             <div className="filterbar">
               <div className="search-box">
                 <Search size={15} />

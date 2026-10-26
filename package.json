@@ -1,6 +1,6 @@
 {
   "name": "mitm-gui",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "A desktop mitmproxy GUI for HTTP(S), WireGuard, rewrite rules and Python scripts",
   "main": "electron/main.cjs",
   "scripts": {
@@ -66,7 +66,7 @@
       "entitlementsInherit": "resources/macos.entitlements.plist",
       "notarize": false
     },
-    "copyright": "Copyright \u00a9 2026 SPomodor",
+    "copyright": "Copyright © 2026 SPomodor",
     "beforePack": "scripts/before-pack.cjs",
     "afterSign": "scripts/notarize.cjs",
     "afterPack": "scripts/sign-unsigned-mac.cjs"

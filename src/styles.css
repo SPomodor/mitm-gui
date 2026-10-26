@@ -734,6 +734,7 @@ button .spin {
   gap: 12px;
 }
 .breadcrumbs {
+  min-width: 0;
   display: flex;
   gap: 12px;
   align-items: center;
@@ -743,6 +744,24 @@ button .spin {
 .breadcrumbs strong {
   color: var(--text);
   font-weight: 500;
+}
+.traffic-count {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.traffic-context {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.breadcrumbs strong,
+.toolbar-actions {
+  flex-shrink: 0;
+}
+.topbar + .filterbar {
+  border-top: 0;
 }
 .toolbar-actions {
   display: flex;

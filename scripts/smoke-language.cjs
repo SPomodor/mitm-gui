@@ -71,7 +71,11 @@ const net = require("node:net");
     await launch("english", "en-US");
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await expect(language()).toHaveValue("auto");
-    await expect(page.getByRole("heading", { name: /^Traffic/ })).toBeVisible();
+    await expect(
+      page
+        .locator(".topbar .breadcrumbs strong")
+        .filter({ hasText: /^Traffic$/ }),
+    ).toBeVisible();
     await navigate("Connect device");
     await expect(
       page.getByText("Choose your device and connection method."),
@@ -170,7 +174,11 @@ const net = require("node:net");
     await launch("fallback", "de-DE");
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await language().selectOption("ru");
-    await expect(page.getByRole("heading", { name: /^Трафик/ })).toBeVisible();
+    await expect(
+      page
+        .locator(".topbar .breadcrumbs strong")
+        .filter({ hasText: /^Трафик$/ }),
+    ).toBeVisible();
     await application.close();
     application = null;
     await launch("russian", "ru-RU");

@@ -235,7 +235,7 @@ async function unusedPort() {
       )
       .toBe(230);
     await expect(page.locator(".topbar .toolbar-actions > button")).toHaveCount(
-      3,
+      4,
     );
     await expect(
       page.locator(".sidebar-bottom .capture-control"),
@@ -251,6 +251,12 @@ async function unusedPort() {
       animations: "disabled",
       path: path.join(output, "01-traffic.png"),
     });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.screenshot({
+      animations: "disabled",
+      path: path.join(output, "01-traffic-compact.png"),
+    });
+    await page.setViewportSize({ width: 1440, height: 940 });
     await page
       .getByRole("navigation")
       .getByRole("button", { name: "Подключить устройство", exact: true })
@@ -1246,7 +1252,7 @@ def stop(request, ctx):
     await page
       .getByRole("button", { name: "Phone debugging", exact: true })
       .click();
-    await expect(page.locator(".page-heading:visible")).toContainText(
+    await expect(page.locator(".topbar .traffic-context")).toContainText(
       "Архив · Phone debugging",
     );
     await expect(
