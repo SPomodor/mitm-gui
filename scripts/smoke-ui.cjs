@@ -37,11 +37,9 @@ async function unusedPort() {
   const launchOptions = {
     ...(packaged
       ? {
-          executablePath: path.resolve(
-            portable
-              ? path.join(buildDirectory, `mitm-gui-${version}-win-x64.exe`)
-              : path.join(buildDirectory, "win-unpacked/mitm gui.exe"),
-          ),
+          executablePath: portable
+            ? require("./windows-build.cjs").portable
+            : require("./windows-build.cjs").executable,
           args: [],
         }
       : { args: [path.resolve(".")] }),

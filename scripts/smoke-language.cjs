@@ -26,10 +26,7 @@ const net = require("node:net");
       );
     }
     application = await electron.launch({
-      executablePath: path.resolve(
-        process.env.CHLS_SMOKE_BUILD_DIR || "release",
-        "win-unpacked/mitm gui.exe",
-      ),
+      executablePath: require("./windows-build.cjs").executable,
       args: [],
       env: {
         ...process.env,

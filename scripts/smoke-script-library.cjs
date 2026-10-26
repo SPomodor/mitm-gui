@@ -18,10 +18,7 @@ const http = require("node:http");
   );
   const launch = (profile = data) =>
     electron.launch({
-      executablePath: path.resolve(
-        process.env.CHLS_SMOKE_BUILD_DIR || "release",
-        "win-unpacked/mitm gui.exe",
-      ),
+      executablePath: require("./windows-build.cjs").executable,
       args: [],
       env: {
         ...process.env,

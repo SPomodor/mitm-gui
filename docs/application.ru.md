@@ -1065,3 +1065,7 @@ aa6b2af  format truncated JSON previews
 ## Переименование 0.9.0
 
 Приложение называется **mitm gui**, **by SPomodor**. Создано при помощи OpenAI Codex. Старые профили CHLS подхватываются автоматически; импорт `chls` остаётся совместимым. Новые примеры используют `from mitm_gui import ...`. Сборка: `npm run setup`, `npm run package`; бинарник `release/mitm-gui-0.9.0-win-x64.exe`. Сборки GitHub Actions и релизы: [README](../README.ru.md).
+
+## Windows ARM64 (гибридная сборка)
+
+С версии 0.9.1 доступен нативный интерфейс ARM64 с движком x64 под эмуляцией Windows 11. Это не полностью нативная ARM64-сборка. Windows x86/32-bit, ARM32 и Windows 10 ARM не поддерживаются. Выберите подходящий EXE в Releases.

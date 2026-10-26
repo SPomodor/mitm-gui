@@ -16,13 +16,24 @@ concurrency:
 
 jobs:
   windows:
-    name: Windows x64
-    runs-on: windows-latest
+    name: Windows ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+            unpacked: win-unpacked
+          - arch: arm64
+            runner: windows-11-arm
+            unpacked: win-arm64-unpacked
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     env:
       PYTHONUTF8: "1"
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
       CHLS_SMOKE_BUILD_DIR: release
+      MITM_GUI_TARGET_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -30,10 +41,12 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "24"
+          architecture: ${{ matrix.arch }}
           cache: npm
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
+          architecture: x64
           cache: pip
           cache-dependency-path: |
             requirements.txt
@@ -65,27 +78,29 @@ jobs:
           .venv/Scripts/python.exe -m pytest tests/test_integration.py -q
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Package desktop app
-        run: npx electron-builder --win --dir --publish never
+        run: npx electron-builder --win --${{ matrix.arch }} --dir --publish never
+      - name: Verify executable architectures
+        run: npm run test:architecture
       - name: Smoke test packaged app
         run: node scripts/ci-check.cjs scripts/smoke-ui.cjs --packaged
       - name: Smoke test language switching
         run: node scripts/ci-check.cjs scripts/smoke-language.cjs
       - name: Build portable EXE
-        run: npx electron-builder --win portable --prepackaged release/win-unpacked --publish never
+        run: npx electron-builder --win portable --${{ matrix.arch }} --prepackaged release/${{ matrix.unpacked }} --publish never
       - name: Write checksum
         shell: pwsh
         run: |
-          Get-ChildItem release/mitm-gui-*-win-x64.exe | ForEach-Object {
+          Get-ChildItem release/mitm-gui-*-win-${{ matrix.arch }}.exe | ForEach-Object {
             $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
-            "$hash  $($_.Name)" | Set-Content -Encoding utf8 "release/SHA256SUMS.txt"
+            "$hash  $($_.Name)" | Set-Content -Encoding utf8 "release/SHA256SUMS-${{ matrix.arch }}.txt"
           }
       - name: Upload application
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: mitm-gui-windows-x64
+          name: mitm-gui-windows-${{ matrix.arch }}
           path: |
-            release/mitm-gui-*-win-x64.exe
-            release/SHA256SUMS.txt
+            release/mitm-gui-*-win-${{ matrix.arch }}.exe
+            release/SHA256SUMS-${{ matrix.arch }}.txt
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
@@ -93,7 +108,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: windows-test-diagnostics
+          name: windows-${{ matrix.arch }}-test-diagnostics
           path: |
             build/**/*.png
             build/**/*.log
@@ -110,7 +125,8 @@ jobs:
     steps:
       - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
-          name: mitm-gui-windows-x64
+          pattern: mitm-gui-windows-*
+          merge-multiple: true
           path: artifacts
       - name: Publish GitHub Release
         env:
@@ -119,6 +135,16 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --verify-tag --title "mitm gui $TAG" --generate-notes
+            cat > release-notes.md <<'NOTES'
+          ## Windows builds
+
+          - **x64**: x64 interface and network engine.
+          - **ARM64 hybrid**: native ARM64 interface with the x64 network engine under Windows 11 emulation. This is not a fully native ARM64 build. Windows 11 on ARM64 is required.
+
+          Both builds pass proxy, WireGuard, scripting and desktop tests on their respective Windows runners before publication. Check the matching SHA256SUMS file after downloading.
+
+          Windows x86/32-bit, ARM32 and Windows 10 ARM are not supported by this release.
+          NOTES
+            gh release create "$TAG" --verify-tag --title "mitm gui $TAG" --notes-file release-notes.md --generate-notes
           fi
           gh release upload "$TAG" artifacts/* --clobber

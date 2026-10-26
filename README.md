@@ -12,9 +12,22 @@ Built by **SPomodor with the assistance of OpenAI Codex**. This is an independen
 
 **[Download a release](https://github.com/SPomodor/mitm-gui/releases)** · [CI builds](https://github.com/SPomodor/mitm-gui/actions/workflows/build.yml)
 
-The supported distribution is **Windows x64**: `mitm-gui-<version>-win-x64.exe`. No separate Python or Node.js installation is required. If no release has been published yet, open a successful Actions run and download its `mitm-gui-windows-x64` artifact.
+Choose **Windows x64** (`mitm-gui-<version>-win-x64.exe`) or **Windows ARM64 hybrid** (`mitm-gui-<version>-win-arm64.exe`). No separate Python or Node.js installation is required. If no release has been published yet, open a successful Actions run and download the matching `mitm-gui-windows-x64` or `mitm-gui-windows-arm64` artifact.
 
 Builds are currently unsigned; Windows may show an unknown-publisher warning. macOS is not yet verified: native build commands are provided for porting, but the Windows workflow does not produce a Mac application.
+
+## Windows architectures
+
+| Build | Runtime | Status |
+| --- | --- | --- |
+| x64 | x64 interface and x64 engine | Supported |
+| ARM64 | Native ARM64 interface + x64 engine under Windows emulation | Hybrid; requires Windows 11 on ARM64 |
+| x86 / 32-bit | — | Unavailable with the current Electron/mitmproxy stack |
+
+ARM64 releases are explicitly hybrid: the network engine is not native ARM64.
+The same proxy, WireGuard and script integration tests run on a Windows ARM64 runner before publishing.
+Windows 10 ARM and 32-bit ARM are not supported. Electron 44 removed Windows ia32 builds;
+mitmproxy-rs currently publishes Windows wheels for x64 only.
 
 ## Features
 
@@ -73,11 +86,11 @@ The EXE is written to `release/`. Build output, dependencies, private keys and c
 
 ## Build on GitHub
 
-Every push and pull request runs [Build and test](.github/workflows/build.yml) on Windows: frontend/backend tests, a frozen Python engine, real proxy integration checks, packaged desktop smoke tests and portable packaging.
+Every push and pull request runs [Build and test](.github/workflows/build.yml) on Windows x64 and ARM64: frontend/backend tests, a frozen Python engine, real proxy integration checks, packaged desktop smoke tests and portable packaging.
 
 - Download `mitm-gui-windows-x64` from a successful run's **Artifacts** section.
 - Use **Actions → Build and test → Run workflow** for a manual build.
-- Push a tag matching `package.json`, such as `v0.9.0`, to publish a GitHub Release after all checks pass. The release includes the EXE and SHA-256 checksum.
+- Push a tag matching `package.json`, such as `v0.9.1`, to publish a GitHub Release after all checks pass. The release includes the EXE and SHA-256 checksum.
 
 The workflow uses the built-in `GITHUB_TOKEN`; no personal access token or signing secret is required for the unsigned Windows build. See [release instructions](CONTRIBUTING.md#releases).
 

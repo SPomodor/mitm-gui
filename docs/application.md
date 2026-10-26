@@ -201,3 +201,7 @@ Back up the profile only while the app is closed. It may contain credentials, pr
 **Missing fixtures:** choose the directory relative to which `file=` and `load_json()` paths resolve, then apply again. Fixtures are snapshotted at compile time.
 
 **Engine fails to launch:** check `engine/engine.log` in the profile and port conflicts. Share a redacted log, not the entire profile.
+
+## Windows ARM64 (hybrid)
+
+Version 0.9.1 adds a native ARM64 interface with the x64 engine running under Windows 11 emulation. It is not a fully native ARM64 build. Windows x86/32-bit, ARM32 and Windows 10 ARM are not supported. Choose the correct architecture in Releases.

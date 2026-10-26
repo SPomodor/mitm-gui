@@ -77,8 +77,8 @@ The runner must allow Actions. If GitHub disables Actions for the repository, en
 4. Create and push the exact version tag:
 
 ```sh
-git tag v0.9.0
-git push origin v0.9.0
+git tag v0.9.1
+git push origin v0.9.1
 ```
 
 The tag must equal `v` plus `package.json.version`. A tag build repeats all checks, then creates a GitHub Release and uploads the portable EXE and `SHA256SUMS.txt`. A normal push only produces Actions artifacts. The workflow explicitly disables electron-builder's implicit publication.
@@ -92,3 +92,30 @@ The former product name was CHLS. `window.chls`, `CHLS_*` test/launcher environm
 ## Attribution
 
 mitm gui is **by SPomodor**, developed with the assistance of **OpenAI Codex**. Preserve the ISC license and third-party notices.
+
+## Windows ARM64 hybrid build
+
+CI has two matrix entries: `windows-latest` with x64 Node, and `windows-11-arm`
+with ARM64 Node. Both explicitly use **x64 Python 3.13**. This is intentional:
+mitmproxy-rs and its current native dependencies do not provide a complete Windows ARM64 wheel set.
+The ARM64 Electron process starts the x64 backend using Windows 11 emulation.
+HTTP proxy and WireGuard modes do not require the bundled x64 local-capture driver.
+
+`MITM_GUI_TARGET_ARCH` selects `x64` or `arm64` for packaging checks and smoke tests.
+The PE-header check verifies the actual frontend architecture and requires an x64 engine;
+it does not infer architecture from filenames. Release publishing waits for both matrix jobs.
+Artifacts and SHA-256 files are named per architecture and merged for the tagged release.
+
+To cross-package an ARM64 interface from Windows x64 (execution testing still requires ARM64 Windows):
+
+```powershell
+npm run build
+npm run build:engine
+$env:MITM_GUI_TARGET_ARCH = 'arm64'
+npx electron-builder --win --arm64 --dir --publish never
+npm run test:architecture
+npx electron-builder --win portable --arm64 --prepackaged release/win-arm64-unpacked --publish never
+```
+
+Do not label this as fully native ARM64. Do not add an ia32 target: Electron 44
+has no such runtime and the current mitmproxy Rust wheel is x64-only on Windows.
