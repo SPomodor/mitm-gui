@@ -50,19 +50,23 @@ def environment(tmp_path_factory):
     log = (root / 'log.txt').open('w', encoding='utf-8')
     command = [os.environ['CHLS_TEST_ENGINE']] if os.environ.get('CHLS_TEST_ENGINE') else [sys.executable, '-m', 'backend']
     process = subprocess.Popen([*command, '--port', str(api_port)], env={**os.environ, 'CHLS_TOKEN': 'integration-secret', 'CHLS_DATA': str(root)}, stdout=log, stderr=log)
-    client = httpx.Client(base_url=f'http://127.0.0.1:{api_port}', headers={'Authorization': 'Bearer integration-secret'}, timeout=15)
+    # macOS runners may configure system proxies. Management traffic must stay local.
+    client = httpx.Client(base_url=f'http://127.0.0.1:{api_port}', headers={'Authorization': 'Bearer integration-secret'}, timeout=15, trust_env=False)
     try:
+        last_status = 'not contacted'
         for _ in range(150):
             if process.poll() is not None:
                 pytest.fail((root / 'log.txt').read_text('utf-8'))
             try:
-                if client.get('/status').status_code == 200:
+                response = client.get('/status', timeout=.5)
+                last_status = f'{response.status_code}: {response.text[:500]}'
+                if response.status_code == 200:
                     break
             except httpx.TransportError:
                 pass
             time.sleep(.1)
         else:
-            pytest.fail('Engine startup timed out')
+            pytest.fail(f'Engine startup timed out; last API response: {last_status}\n' + (root / 'log.txt').read_text('utf-8'))
         upstream = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Upstream)
         thread = threading.Thread(target=upstream.serve_forever, daemon=True)
         thread.start()
@@ -86,7 +90,7 @@ def test_real_capture_rules_and_wireguard(environment):
     initial = client.get('/status').json()
     assert initial['running'] is True
     assert client.get('/flows').json() == []
-    assert httpx.get(str(client.base_url).rstrip('/') + '/status').status_code == 401
+    assert httpx.get(str(client.base_url).rstrip('/') + '/status', trust_env=False).status_code == 401
     response = client.post('/capture/start', json={'http': True, 'wireguard': True, 'port': port, 'wg_port': wg_port, 'lan': False})
     assert response.status_code == 200, response.text
     assert response.json()['session'] == initial['session']
@@ -211,19 +215,22 @@ def restarted_engine(root, api_port):
     command = [os.environ['CHLS_TEST_ENGINE']] if os.environ.get('CHLS_TEST_ENGINE') else [sys.executable, '-m', 'backend']
     with (root / 'restart.log').open('a', encoding='utf-8') as log:
         process = subprocess.Popen([*command, '--port', str(api_port)], env={**os.environ, 'CHLS_TOKEN': 'restart-secret', 'CHLS_DATA': str(root)}, stdout=log, stderr=log)
-        client = httpx.Client(base_url=f'http://127.0.0.1:{api_port}', headers={'Authorization': 'Bearer restart-secret'}, timeout=10)
+        client = httpx.Client(base_url=f'http://127.0.0.1:{api_port}', headers={'Authorization': 'Bearer restart-secret'}, timeout=10, trust_env=False)
         try:
+            last_status = 'not contacted'
             for _ in range(150):
                 if process.poll() is not None:
                     pytest.fail((root / 'restart.log').read_text('utf-8'))
                 try:
-                    if client.get('/status').status_code == 200:
+                    response = client.get('/status', timeout=.5)
+                    last_status = f'{response.status_code}: {response.text[:500]}'
+                    if response.status_code == 200:
                         break
                 except httpx.TransportError:
                     pass
                 time.sleep(.1)
             else:
-                pytest.fail('Restart timed out')
+                pytest.fail(f'Restart timed out; last API response: {last_status}\n' + (root / 'restart.log').read_text('utf-8'))
             yield client
         finally:
             with contextlib.suppress(Exception):
