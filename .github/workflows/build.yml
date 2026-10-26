@@ -46,7 +46,12 @@ jobs:
       - name: Build frontend and check TypeScript
         run: npm run build
       - name: Test backend
-        run: npm test
+        shell: pwsh
+        run: |
+          npm test -- --junitxml=build/pytest.xml
+          $testExit = $LASTEXITCODE
+          .venv/Scripts/python.exe scripts/report-test-failures.py build/pytest.xml
+          exit $testExit
       - name: Test body formatting and translation catalog
         run: |
           npm run test:format
