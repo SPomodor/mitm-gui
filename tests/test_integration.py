@@ -22,6 +22,25 @@ def free_port(kind=socket.SOCK_STREAM):
         return sock.getsockname()[1]
 
 
+def engine_command():
+    if os.environ.get('CHLS_TEST_ENGINE'):
+        return [os.environ['CHLS_TEST_ENGINE']]
+    if os.environ.get('GITHUB_ACTIONS'):
+        # Capture the child stack, including imports, if runner startup stalls.
+        return [sys.executable, '-c',
+                "import faulthandler, runpy; faulthandler.dump_traceback_later(5, repeat=True); "
+                "runpy.run_module('backend', run_name='__main__')"]
+    return [sys.executable, '-m', 'backend']
+
+
+def startup_failure(message, log_path):
+    detail = message + '\n' + log_path.read_text('utf-8')
+    if os.environ.get('GITHUB_ACTIONS'):
+        escaped = detail[-3500:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+        print(f'::error title=Engine startup::{escaped}', flush=True)
+    pytest.fail(detail)
+
+
 class Upstream(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith('/slow-clear'):
@@ -48,7 +67,7 @@ def environment(tmp_path_factory):
     api_port, proxy_port, wg_port = free_port(), free_port(), free_port(socket.SOCK_DGRAM)
     (root / 'capture.json').write_text(json.dumps({'http': True, 'wireguard': True, 'port': proxy_port, 'wg_port': wg_port, 'lan': False}), encoding='utf-8')
     log = (root / 'log.txt').open('w', encoding='utf-8')
-    command = [os.environ['CHLS_TEST_ENGINE']] if os.environ.get('CHLS_TEST_ENGINE') else [sys.executable, '-m', 'backend']
+    command = engine_command()
     process = subprocess.Popen([*command, '--port', str(api_port)], env={**os.environ, 'CHLS_TOKEN': 'integration-secret', 'CHLS_DATA': str(root)}, stdout=log, stderr=log)
     # macOS runners may configure system proxies. Management traffic must stay local.
     client = httpx.Client(base_url=f'http://127.0.0.1:{api_port}', headers={'Authorization': 'Bearer integration-secret'}, timeout=15, trust_env=False)
@@ -62,11 +81,11 @@ def environment(tmp_path_factory):
                 last_status = f'{response.status_code}: {response.text[:500]}'
                 if response.status_code == 200:
                     break
-            except httpx.TransportError:
-                pass
+            except httpx.TransportError as error:
+                last_status = repr(error)
             time.sleep(.1)
         else:
-            pytest.fail(f'Engine startup timed out; last API response: {last_status}\n' + (root / 'log.txt').read_text('utf-8'))
+            startup_failure(f'Engine startup timed out; last API response: {last_status}', root / 'log.txt')
         upstream = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Upstream)
         thread = threading.Thread(target=upstream.serve_forever, daemon=True)
         thread.start()
@@ -212,7 +231,7 @@ def test_validation_sessions_and_failed_ports(environment):
 
 @contextlib.contextmanager
 def restarted_engine(root, api_port):
-    command = [os.environ['CHLS_TEST_ENGINE']] if os.environ.get('CHLS_TEST_ENGINE') else [sys.executable, '-m', 'backend']
+    command = engine_command()
     with (root / 'restart.log').open('a', encoding='utf-8') as log:
         process = subprocess.Popen([*command, '--port', str(api_port)], env={**os.environ, 'CHLS_TOKEN': 'restart-secret', 'CHLS_DATA': str(root)}, stdout=log, stderr=log)
         client = httpx.Client(base_url=f'http://127.0.0.1:{api_port}', headers={'Authorization': 'Bearer restart-secret'}, timeout=10, trust_env=False)
@@ -226,11 +245,11 @@ def restarted_engine(root, api_port):
                     last_status = f'{response.status_code}: {response.text[:500]}'
                     if response.status_code == 200:
                         break
-                except httpx.TransportError:
-                    pass
+                except httpx.TransportError as error:
+                    last_status = repr(error)
                 time.sleep(.1)
             else:
-                pytest.fail(f'Restart timed out; last API response: {last_status}\n' + (root / 'restart.log').read_text('utf-8'))
+                startup_failure(f'Restart timed out; last API response: {last_status}', root / 'restart.log')
             yield client
         finally:
             with contextlib.suppress(Exception):
