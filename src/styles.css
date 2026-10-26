@@ -1100,6 +1100,27 @@ button .spin {
   align-items: center;
   gap: 12px;
 }
+.summary-facts {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.summary-facts > span {
+  white-space: nowrap;
+}
+.summary-meta {
+  font-size: 11px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.summary-facts + .create-menu {
+  align-self: flex-start;
+  flex-shrink: 0;
+}
 .create-menu {
   margin-left: auto;
   position: relative;
@@ -1117,6 +1138,45 @@ button .spin {
   display: flex;
   gap: 9px;
   margin-top: 10px;
+}
+.request-url {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+.request-url-measure {
+  position: absolute;
+  visibility: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+  width: max-content;
+}
+.request-url.is-collapsed {
+  display: flex;
+  align-items: baseline;
+}
+.request-url.is-collapsed .request-url-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.request-url-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: baseline;
+  min-width: 24px;
+  flex-shrink: 0;
+  height: 20px;
+  margin-left: 4px;
+  border-radius: 4px;
+  background: var(--raised);
+  color: var(--muted);
+}
+.request-url-toggle:hover {
+  background: var(--hover);
+  color: var(--text);
 }
 .inspector-switch {
   display: flex;

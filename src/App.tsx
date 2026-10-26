@@ -58,6 +58,7 @@ import { api, newRule, useApp } from "./store";
 import RewriteFields, { editableRule, requestActions } from "./RewriteFields";
 import Mocks from "./Mocks";
 import SearchBody from "./SearchBody";
+import RequestUrl from "./RequestUrl";
 import { PaneSeparator, usePaneResize } from "./PaneResize";
 import { splitRuleLocation } from "./ruleLocation";
 import packageInfo from "../package.json";
@@ -1700,19 +1701,24 @@ function Inspector({
     <>
       <div className="request-summary">
         <div className="summary-line">
-          <span className={`method ${detail.method === "GET" ? "get" : ""}`}>
-            {detail.method}
-          </span>
-          <span
-            className={`http-status ${detail.error || (detail.status || 0) >= 400 ? "failure" : "success"}`}
-          >
-            {detail.error ? "Error" : detail.status || "Pending"}
-          </span>
-          <span className="numeric">
-            {detail.duration !== null
-              ? `${detail.duration} ms`
-              : t("В процессе")}
-          </span>
+          <div className="summary-facts">
+            <span className={`method ${detail.method === "GET" ? "get" : ""}`}>
+              {detail.method}
+            </span>
+            <span
+              className={`http-status ${detail.error || (detail.status || 0) >= 400 ? "failure" : "success"}`}
+            >
+              {detail.error ? "Error" : detail.status || "Pending"}
+            </span>
+            <span className="numeric">
+              {detail.duration !== null
+                ? `${detail.duration} ms`
+                : t("В процессе")}
+            </span>
+            <span className="summary-meta">{time(detail.started)}</span>
+            <span className="summary-meta">{detail.client}</span>
+            <span className="summary-meta">{size(detail.size)}</span>
+          </div>
           <div className="create-menu">
             <button className="button small" onClick={() => setMenu(!menu)}>
               <Plus size={12} />
@@ -1738,14 +1744,7 @@ function Inspector({
             )}
           </div>
         </div>
-        <div className="full-url">{detail.url}</div>
-        <div className="request-meta">
-          {time(detail.started)}
-          <span>·</span>
-          {detail.client}
-          <span>·</span>
-          {size(detail.size)}
-        </div>
+        <RequestUrl key={detail.id} url={detail.url} />
       </div>
       {detail.error && <div className="inline-error">{detail.error}</div>}
       <div className="inspector-switch">

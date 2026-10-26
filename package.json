@@ -1,6 +1,6 @@
 {
   "name": "mitm-gui",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "A desktop mitmproxy GUI for HTTP(S), WireGuard, rewrite rules and Python scripts",
   "main": "electron/main.cjs",
   "scripts": {

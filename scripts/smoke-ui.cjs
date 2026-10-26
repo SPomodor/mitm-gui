@@ -696,6 +696,39 @@ async function unusedPort() {
       .getByRole("navigation")
       .getByRole("button", { name: /^Трафик/ })
       .click();
+    // URL query folding follows the actual inspector width, not a fixed breakpoint.
+    await fetchProxy(url + "?compact_url=" + "a".repeat(28));
+    await expect(page.locator(".flow-row").first()).toContainText(
+      "compact_url",
+    );
+    await page.locator(".flow-row").first().click();
+    await trafficHandle.press("End");
+    const urlToggle = page.locator(".request-url-toggle");
+    const visibleUrl = page.locator(".request-url-value");
+    await expect(urlToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(visibleUrl).not.toContainText("compact_url");
+    await urlToggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(visibleUrl).toContainText("compact_url=" + "a".repeat(28));
+    await expect(urlToggle).toHaveAttribute("aria-expanded", "true");
+    await urlToggle.click();
+    await trafficHandle.press("Home");
+    await expect(urlToggle).toHaveCount(0);
+    await expect(visibleUrl).toContainText("compact_url");
+    await trafficHandle.press("End");
+    await expect(urlToggle).toHaveAttribute("aria-expanded", "false");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.screenshot({
+      animations: "disabled",
+      path: path.join(output, "18-query-collapsed.png"),
+    });
+    await urlToggle.click();
+    await page.screenshot({
+      animations: "disabled",
+      path: path.join(output, "19-query-expanded.png"),
+    });
+    await page.setViewportSize({ width: 1440, height: 940 });
+    await trafficHandle.dblclick();
     // Large-body checks are performed on real saved, decoded proxy traffic.
     if (process.env.CHLS_SMOKE_LARGE_BODY === "1") {
       for (const endpoint of [
