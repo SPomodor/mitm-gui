@@ -75,7 +75,7 @@ def export_har(root: Path, session, rows, *, include_connections=False):
     try:
         with handle:
             handle.write('{"log":')
-            header = {'version': '1.2', 'creator': {'name': 'CHLS', 'version': os.environ.get('CHLS_VERSION', '0.3.0')},
+            header = {'version': '1.2', 'creator': {'name': 'mitm gui', 'version': os.environ.get('CHLS_VERSION', '0.3.0')},
                       '_chlsSession': session, 'pages': []}
             if include_connections:
                 header['comment'] = 'Charles compatibility export: CONNECT/CONNECT-UDP entries are synthetic connection summaries, not captured HTTP requests.'

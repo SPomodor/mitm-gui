@@ -1,0 +1,11 @@
+mitm gui — by SPomodor
+Developed with the assistance of OpenAI Codex.
+
+This project is an independent GUI built on mitmproxy and is not an official
+mitmproxy product. Third-party components retain their own licenses.
+
+mitmproxy: https://github.com/mitmproxy/mitmproxy
+Electron: https://github.com/electron/electron
+React: https://github.com/facebook/react
+CodeMirror: https://github.com/codemirror
+Lucide: https://github.com/lucide-icons/lucide

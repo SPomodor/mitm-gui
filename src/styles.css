@@ -399,6 +399,21 @@ button .spin {
   letter-spacing: -1px;
   font-weight: 650;
 }
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.brand-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.brand-engine {
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 14px;
+}
 .brand-dot {
   color: var(--accent);
 }
@@ -2148,6 +2163,11 @@ button .spin {
   flex-direction: column;
   width: 100%;
   min-height: 0;
+}
+.language-control {
+  display: block;
+  max-width: 50%;
+  min-width: 0;
 }
 .mocks-page .page-heading {
   padding: 16px 20px 12px;

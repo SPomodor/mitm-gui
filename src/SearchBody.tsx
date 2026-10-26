@@ -1,3 +1,4 @@
+import { t, useLocale } from "./i18n";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Search, X } from "lucide-react";
 import VirtualCode from "./VirtualCode";
@@ -12,6 +13,7 @@ export default memo(function SearchBody({
   format: boolean;
   truncated?: boolean;
 }) {
+  useLocale();
   const formatted = useMemo(
     () => formatBody(rawText, truncated),
     [rawText, truncated],
@@ -54,12 +56,16 @@ export default memo(function SearchBody({
   return (
     <div className="searchable-body">
       {open ? (
-        <div className="body-search" role="search" aria-label="Поиск в теле">
+        <div
+          className="body-search"
+          role="search"
+          aria-label={t("Поиск в теле")}
+        >
           <Search size={14} />
           <input
             ref={input}
-            aria-label="Найти в теле"
-            placeholder="Найти в JSON или тексте…"
+            aria-label={t("Найти в теле")}
+            placeholder={t("Найти в JSON или тексте…")}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -83,7 +89,7 @@ export default memo(function SearchBody({
           </span>
           <button
             className="icon-button"
-            aria-label="Предыдущее совпадение"
+            aria-label={t("Предыдущее совпадение")}
             disabled={!matches.length}
             onClick={() => move(-1)}
           >
@@ -91,7 +97,7 @@ export default memo(function SearchBody({
           </button>
           <button
             className="icon-button"
-            aria-label="Следующее совпадение"
+            aria-label={t("Следующее совпадение")}
             disabled={!matches.length}
             onClick={() => move(1)}
           >
@@ -99,7 +105,7 @@ export default memo(function SearchBody({
           </button>
           <button
             className="icon-button"
-            aria-label="Закрыть поиск в теле"
+            aria-label={t("Закрыть поиск в теле")}
             onClick={() => setOpen(false)}
           >
             <X size={14} />
@@ -113,7 +119,8 @@ export default memo(function SearchBody({
             requestAnimationFrame(() => input.current?.focus());
           }}
         >
-          <Search size={12} /> Найти · Ctrl+F
+          <Search size={12} />
+          {t(" Найти · Ctrl+F")}
         </button>
       )}
       <VirtualCode

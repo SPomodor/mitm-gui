@@ -9,3 +9,17 @@ __pycache__/
 *.spec
 build/
 graphify-out/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.har
+*.db
+*.db-shm
+*.db-wal
+wireguard.conf
+.DS_Store
+Thumbs.db

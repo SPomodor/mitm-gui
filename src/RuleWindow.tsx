@@ -1,3 +1,4 @@
+import { t, localizeMessage, useLocale } from "./i18n";
 import { useEffect, useState } from "react";
 import { RuleEditor } from "./App";
 import { api, useApp } from "./store";
@@ -8,6 +9,7 @@ const close = () => {
 };
 
 export default function RuleWindow() {
+  useLocale();
   const [rule, setRule] = useState<Rule | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -26,7 +28,7 @@ export default function RuleWindow() {
       .then(([item]) => {
         if (active) {
           setRule(item);
-          document.title = `${item.name} — CHLS`;
+          document.title = `${item.name} — mitm gui`;
         }
       })
       .catch((e) => {
@@ -56,12 +58,12 @@ export default function RuleWindow() {
   if (error)
     return (
       <div className="inline-error" role="alert">
-        {error}
+        {localizeMessage(error)}
       </div>
     );
   return rule ? (
     <RuleEditor rule={rule} onClose={close} />
   ) : (
-    <div className="form-content">Загрузка редактора…</div>
+    <div className="form-content">{t("Загрузка редактора…")}</div>
   );
 }

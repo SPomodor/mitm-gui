@@ -1,3 +1,11 @@
+import {
+  t,
+  localizeMessage,
+  useLocale,
+  useLanguagePreference,
+  setLanguage,
+  getLocale,
+} from "./i18n";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -88,7 +96,7 @@ const size = (n: number) =>
       ? `${(n / 1024).toFixed(1)} KB`
       : `${(n / 1048576).toFixed(1)} MB`;
 const time = (n: number) =>
-  new Date(n * 1000).toLocaleTimeString("ru-RU", { hour12: false });
+  new Date(n * 1000).toLocaleTimeString(getLocale(), { hour12: false });
 function IconButton({
   title,
   children,
@@ -100,6 +108,7 @@ function IconButton({
   onClick: () => void;
   disabled?: boolean;
 }) {
+  useLocale();
   return (
     <button
       className="icon-button"
@@ -123,6 +132,7 @@ function Empty({
   children: React.ReactNode;
   action?: React.ReactNode;
 }) {
+  useLocale();
   return (
     <div className="empty">
       <div className="empty-icon">
@@ -145,6 +155,7 @@ function Modal({
   onClose: () => void;
   wide?: boolean;
 }) {
+  useLocale();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement;
@@ -194,7 +205,7 @@ function Modal({
       >
         <header>
           <h2>{title}</h2>
-          <IconButton title="Закрыть" onClick={onClose}>
+          <IconButton title={t("Закрыть")} onClick={onClose}>
             <X size={17} />
           </IconButton>
         </header>
@@ -205,6 +216,8 @@ function Modal({
 }
 
 export default function App() {
+  useLocale();
+  const languagePreference = useLanguagePreference();
   const {
     status,
     ready,
@@ -443,18 +456,18 @@ export default function App() {
           {status?.session === s.id && <span className="tiny-dot" />}
         </button>
         <IconButton
-          title={`Переименовать: ${s.name}`}
+          title={t("Переименовать: {0}", [s.name])}
           onClick={() => setRenaming(s)}
         >
           <Pencil size={13} />
         </IconButton>
         <IconButton
-          title={`Удалить сессию: ${s.name}`}
+          title={t("Удалить сессию: {0}", [s.name])}
           disabled={status?.session === s.id || !!exporting}
           onClick={() =>
             setConfirmation({
-              title: "Удалить сессию?",
-              text: `«${s.name}» и весь её трафик будут удалены.`,
+              title: t("Удалить сессию?"),
+              text: t("«{0}» и весь её трафик будут удалены.", [s.name]),
               action: async () => {
                 await api(`/sessions/${s.id}`, "DELETE");
                 if (useApp.getState().session === s.id)
@@ -472,7 +485,7 @@ export default function App() {
           <Trash2 size={13} />
         </IconButton>
         <IconButton
-          title={`Экспортировать HAR: ${s.name}`}
+          title={t("Экспортировать HAR: {0}", [s.name])}
           disabled={!!exporting}
           onClick={() => {
             setExportConnections(false);
@@ -496,10 +509,15 @@ export default function App() {
           <span className="brand-mark">
             <Network size={18} />
           </span>
-          <strong>
-            chls<span className="brand-dot">.</span>
-          </strong>
-          <span className="version">v{packageInfo.version}</span>
+          <div className="brand-copy">
+            <div className="brand-title">
+              <strong>
+                mitm gui<span className="brand-dot">.</span>
+              </strong>
+              <span className="version">v{packageInfo.version}</span>
+            </div>
+            <span className="brand-engine">mitmproxy 12 · by SPomodor</span>
+          </div>
         </div>
         <div className="workspace-label">WORKSPACE</div>
         <nav>
@@ -508,25 +526,28 @@ export default function App() {
             onClick={() => setPage("traffic")}
           >
             <Activity size={17} />
-            Трафик<span className="count">{flows.length}</span>
+            {t("Трафик")}
+            <span className="count">{flows.length}</span>
           </button>
           <button
             className={page === "rules" ? "nav-item active" : "nav-item"}
             onClick={() => setPage("rules")}
           >
             <SlidersHorizontal size={17} />
-            Правила<span className="count">{rules.length}</span>
+            {t("Правила")}
+            <span className="count">{rules.length}</span>
           </button>
           <button
             className={page === "mocks" ? "nav-item active" : "nav-item"}
             onClick={() => setPage("mocks")}
           >
             <FileJson size={17} />
-            Сценарии{mockEnabled && <span className="tag">ON</span>}
+            {t("Сценарии")}
+            {mockEnabled && <span className="tag">ON</span>}
           </button>
           <button className="nav-item" onClick={() => setConnect(true)}>
             <Smartphone size={17} />
-            Подключить устройство
+            {t("Подключить устройство")}
           </button>
         </nav>
         <div className="sidebar-panes" ref={sidebarSections.containerRef}>
@@ -538,8 +559,8 @@ export default function App() {
             }}
           >
             <div className="sidebar-section">
-              <span>СЕССИИ</span>
-              <IconButton title="Новая сессия" onClick={newSession}>
+              <span>{t("СЕССИИ")}</span>
+              <IconButton title={t("Новая сессия")} onClick={newSession}>
                 <Plus size={14} />
               </IconButton>
             </div>
@@ -548,13 +569,13 @@ export default function App() {
             </div>
             <button
               className={`archive-toggle ${viewingArchive ? "is-viewing" : ""}`}
-              aria-label="Архив сессий"
+              aria-label={t("Архив сессий")}
               aria-expanded={archiveOpen}
               aria-controls="archived-sessions"
               onClick={() => setArchiveOpen(!archiveOpen)}
             >
               <Archive size={14} />
-              <span>Архив</span>
+              <span>{t("Архив")}</span>
               <span className="archive-count">{archivedSessions.length}</span>
               {archiveOpen ? (
                 <ChevronDown size={13} />
@@ -566,12 +587,12 @@ export default function App() {
               <div
                 id="archived-sessions"
                 className="session-list archive-session-list"
-                aria-label="Архивные сессии"
+                aria-label={t("Архивные сессии")}
               >
                 {archivedSessions.map(renderSession)}
                 {!archivedSessions.length && (
                   <p className="archive-empty">
-                    Завершённые сессии появятся здесь.
+                    {t("Завершённые сессии появятся здесь.")}
                   </p>
                 )}
               </div>
@@ -580,18 +601,18 @@ export default function App() {
           {page === "traffic" && (
             <>
               <PaneSeparator
-                label="Высота разделов сессий и хостов"
+                label={t("Высота разделов сессий и хостов")}
                 pane={sidebarSections}
               />
               <div className="sidebar-hosts">
                 <div className="sidebar-section">
-                  <span>ХОСТЫ</span>
+                  <span>{t("ХОСТЫ")}</span>
                   <span className="muted">{hosts.length}</span>
                 </div>
                 <div
                   className="host-mode segmented"
                   role="group"
-                  aria-label="Отображение хостов"
+                  aria-label={t("Отображение хостов")}
                 >
                   <button
                     aria-pressed={!focusOnly}
@@ -602,7 +623,7 @@ export default function App() {
                     }}
                   >
                     <Globe size={13} />
-                    Все хосты
+                    {t("Все хосты")}
                   </button>
                   <button
                     aria-pressed={focusOnly}
@@ -612,7 +633,8 @@ export default function App() {
                       setHost("");
                     }}
                   >
-                    <Filter size={13} />В фокусе
+                    <Filter size={13} />
+                    {t("В фокусе")}
                     <span className="focus-count">{focusedHosts.length}</span>
                   </button>
                 </div>
@@ -631,9 +653,9 @@ export default function App() {
                         </button>
                         <button
                           className={`icon-button ${focusedHosts.includes(h) ? "accent" : ""}`}
-                          aria-label={`Фокус: ${h}`}
+                          aria-label={t("Фокус: {0}", [h])}
                           aria-pressed={focusedHosts.includes(h)}
-                          title="Добавить или убрать хост из фокуса"
+                          title={t("Добавить или убрать хост из фокуса")}
                           onClick={() => toggleHostFocus(h)}
                         >
                           <Filter size={13} />
@@ -642,7 +664,7 @@ export default function App() {
                     ))}
                   {focusOnly && !focusedHosts.length && (
                     <p className="padded muted">
-                      Добавьте хост в фокус кнопкой рядом с его именем.
+                      {t("Добавьте хост в фокус кнопкой рядом с его именем.")}
                     </p>
                   )}
                 </div>
@@ -655,11 +677,11 @@ export default function App() {
             className={`capture-control ${status?.running ? "is-running" : ""}`}
             disabled={!ready || busy}
             onClick={capture}
-            aria-label={status?.running ? "Остановить" : "Начать захват"}
+            aria-label={status?.running ? t("Остановить") : t("Начать захват")}
             title={
               status?.running
-                ? "Остановить перехват · Ctrl+Shift+R"
-                : "Начать перехват · Ctrl+Shift+R"
+                ? t("Остановить перехват · Ctrl+Shift+R")
+                : t("Начать перехват · Ctrl+Shift+R")
             }
           >
             <span className="capture-control-icon">
@@ -670,34 +692,48 @@ export default function App() {
               )}
             </span>
             <span className="capture-control-copy">
-              <strong>Перехват</strong>
+              <strong>{t("Перехват")}</strong>
               <span>
                 {!ready
-                  ? "Запуск движка…"
+                  ? t("Запуск движка…")
                   : busy
-                    ? "Переключение…"
+                    ? t("Переключение…")
                     : status?.running
-                      ? "Активен"
-                      : "Остановлен"}
+                      ? t("Активен")
+                      : t("Остановлен")}
               </span>
             </span>
             <span className={`status-dot ${status?.running ? "live" : ""}`} />
           </button>
           <div className="bottom-meta">
-            <span>mitmproxy 12</span>
+            <label className="language-control">
+              <select
+                aria-label={t("Язык интерфейса")}
+                value={languagePreference}
+                onChange={(event) => {
+                  void setLanguage(
+                    event.target.value as "auto" | "ru" | "en",
+                  ).catch((error) => useApp.getState().setError(error.message));
+                }}
+              >
+                <option value="auto">{t("Авто")}</option>
+                <option value="ru">Русский</option>
+                <option value="en">English</option>
+              </select>
+            </label>
             <select
-              aria-label="Тема оформления"
+              aria-label={t("Тема оформления")}
               value={theme}
               onChange={(e) => setTheme(e.target.value)}
             >
-              <option value="system">Системная</option>
-              <option value="dark">Тёмная</option>
-              <option value="light">Светлая</option>
+              <option value="system">{t("Системная")}</option>
+              <option value="dark">{t("Тёмная")}</option>
+              <option value="light">{t("Светлая")}</option>
             </select>
           </div>
         </div>
       </aside>
-      <PaneSeparator label="Ширина боковой панели" pane={sidebarSize} />
+      <PaneSeparator label={t("Ширина боковой панели")} pane={sidebarSize} />
       <main className="main">
         <header className="topbar">
           <div className="breadcrumbs">
@@ -705,10 +741,10 @@ export default function App() {
             <ChevronRight size={13} />
             <strong>
               {page === "traffic"
-                ? "Трафик"
+                ? t("Трафик")
                 : page === "rules"
-                  ? "Правила"
-                  : "Сценарии"}
+                  ? t("Правила")
+                  : t("Сценарии")}
             </strong>
           </div>
           <div className="toolbar-actions">
@@ -716,13 +752,20 @@ export default function App() {
               className={`privacy-toggle ${status?.config.ssl_proxying !== false ? "enabled" : ""}`}
               disabled={!ready}
               aria-label={
-                status?.config.ssl_proxying === false ? "SSL выкл" : "SSL вкл"
+                status?.config.ssl_proxying === false
+                  ? t("SSL выкл")
+                  : t("SSL вкл")
               }
               aria-pressed={status?.config.ssl_proxying !== false}
               title={
                 status?.config.ssl_scope === "selected"
-                  ? `SSL: только выбранные хосты (${status.config.ssl_hosts?.length || 0}). Изменения действуют на новые соединения.`
-                  : "SSL: все хосты. Изменения действуют на новые соединения."
+                  ? t(
+                      "SSL: только выбранные хосты ({0}). Изменения действуют на новые соединения.",
+                      [status.config.ssl_hosts?.length || 0],
+                    )
+                  : t(
+                      "SSL: все хосты. Изменения действуют на новые соединения.",
+                    )
               }
               onClick={() =>
                 toggleSetting(
@@ -738,7 +781,7 @@ export default function App() {
               )}
             </button>
             <IconButton
-              title="Настроить SSL"
+              title={t("Настроить SSL")}
               disabled={!ready}
               onClick={() => openSSL()}
             >
@@ -748,10 +791,12 @@ export default function App() {
               className={`record-toggle ${status?.recording ? "is-recording" : ""}`}
               disabled={!ready}
               aria-label={
-                status?.recording ? "Пауза записи" : "Включить запись"
+                status?.recording ? t("Пауза записи") : t("Включить запись")
               }
               aria-pressed={!!status?.recording}
-              title="Сохранение трафика в сессию. Прокси, WireGuard и правила продолжают работать. Уже записываемые запросы получат ответ."
+              title={t(
+                "Сохранение трафика в сессию. Прокси, WireGuard и правила продолжают работать. Уже записываемые запросы получат ответ.",
+              )}
               onClick={() => toggleSetting("/recording", !status?.recording)}
             >
               {status?.recording ? (
@@ -764,14 +809,14 @@ export default function App() {
               ) : (
                 <Pause size={15} />
               )}
-              <span>{status?.recording ? "Запись" : "На паузе"}</span>
+              <span>{status?.recording ? t("Запись") : t("На паузе")}</span>
             </button>
           </div>
         </header>
         {error && (
           <div className="error-banner" role="alert">
-            <span>{error}</span>
-            <IconButton title="Скрыть ошибку" onClick={() => setError("")}>
+            <span>{localizeMessage(error)}</span>
+            <IconButton title={t("Скрыть ошибку")} onClick={() => setError("")}>
               <X size={14} />
             </IconButton>
           </div>
@@ -781,13 +826,15 @@ export default function App() {
             <div className="page-heading">
               <div>
                 <h1>
-                  Трафик{" "}
+                  {t("Трафик")}{" "}
                   <span className="heading-count">{filtered.length}</span>
                 </h1>
                 <p>
                   {viewingArchive
-                    ? `Архив · ${sessions.find((s) => s.id === session)?.name}`
-                    : host || "Запросы и ответы ваших приложений"}
+                    ? t("Архив · {0}", [
+                        sessions.find((s) => s.id === session)?.name,
+                      ])
+                    : host || t("Запросы и ответы ваших приложений")}
                 </p>
               </div>
               <div className="heading-actions">
@@ -796,16 +843,19 @@ export default function App() {
                     className="button subtle"
                     onClick={() => openSession(status.session)}
                   >
-                    <Layers size={14} />К текущей сессии
+                    <Layers size={14} />
+                    {t("К текущей сессии")}
                   </button>
                 )}
                 <IconButton
-                  title="Очистить текущую сессию"
+                  title={t("Очистить текущую сессию")}
                   disabled={!flows.length}
                   onClick={() =>
                     setConfirmation({
-                      title: "Очистить трафик?",
-                      text: "Удалить все запросы выбранной сессии? Правила сохранятся.",
+                      title: t("Очистить трафик?"),
+                      text: t(
+                        "Удалить все запросы выбранной сессии? Правила сохранятся.",
+                      ),
                       action: async () => {
                         await api(
                           `/flows?session=${encodeURIComponent(session)}`,
@@ -826,14 +876,16 @@ export default function App() {
                 <Search size={15} />
                 <input
                   ref={searchRef}
-                  placeholder="Поиск по URL, методу, статусу или устройству…"
-                  aria-label="Поиск трафика"
+                  placeholder={t(
+                    "Поиск по URL, методу, статусу или устройству…",
+                  )}
+                  aria-label={t("Поиск трафика")}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
                 {search && (
                   <IconButton
-                    title="Сбросить поиск"
+                    title={t("Сбросить поиск")}
                     onClick={() => setSearch("")}
                   >
                     <X size={13} />
@@ -842,9 +894,9 @@ export default function App() {
               </div>
               <div className="segmented">
                 {[
-                  ["all", "Все"],
-                  ["modified", "Изменённые"],
-                  ["errors", "Ошибки"],
+                  ["all", t("Все")],
+                  ["modified", t("Изменённые")],
+                  ["errors", t("Ошибки")],
                 ].map(([value, label]) => (
                   <button
                     key={value}
@@ -879,11 +931,11 @@ export default function App() {
           <div>
             <span className={`status-dot ${status?.running ? "live" : ""}`} />
             {!ready
-              ? "Подключение к движку"
+              ? t("Подключение к движку")
               : status?.running
                 ? status.recording
-                  ? "Запись включена"
-                  : "Запись на паузе"
+                  ? t("Запись включена")
+                  : t("Запись на паузе")
                 : "Ready"}
             <span className="footer-divider" />
             {status?.running
@@ -898,9 +950,12 @@ export default function App() {
               : "HTTP proxy + WireGuard"}
           </div>
           <div>
-            {activeRules} правил активно
+            {activeRules}
+            {t(" правил активно")}
             {mockEnabled && (
-              <span className="mock-active-label"> · Сценарий активен</span>
+              <span className="mock-active-label">
+                {t(" · Сценарий активен")}
+              </span>
             )}
             <span className="footer-divider" />
             Local workspace
@@ -934,7 +989,7 @@ export default function App() {
                 disabled={confirmBusy}
                 onClick={closeConfirmation}
               >
-                Отмена
+                {t("Отмена")}
               </button>
               <button
                 className="button primary"
@@ -951,7 +1006,7 @@ export default function App() {
                   }
                 }}
               >
-                {confirmBusy ? "Удаление…" : "Удалить"}
+                {confirmBusy ? t("Удаление…") : t("Удалить")}
               </button>
             </div>
           </div>
@@ -959,13 +1014,15 @@ export default function App() {
       )}
       {exportChoice && (
         <Modal
-          title="Экспортировать HAR"
+          title={t("Экспортировать HAR")}
           onClose={() => {
             if (!exporting) setExportChoice(null);
           }}
         >
           <div className="padded">
-            <p>По умолчанию HAR содержит только HTTP-запросы и ответы.</p>
+            <p>
+              {t("По умолчанию HAR содержит только HTTP-запросы и ответы.")}
+            </p>
             <label className="checkbox-label">
               <input
                 type="checkbox"
@@ -973,13 +1030,13 @@ export default function App() {
                 disabled={!!exporting}
                 onChange={(event) => setExportConnections(event.target.checked)}
               />
-              Включить сводки соединений для Charles
+              {t("Включить сводки соединений для Charles")}
             </label>
             {exportConnections && (
               <p className="muted">
-                Зашифрованные соединения будут представлены условными записями
-                CONNECT. Это сведения об адресах и объёме данных, без HTTP-путей
-                и содержимого.
+                {t(
+                  "Зашифрованные соединения будут представлены условными записями CONNECT. Это сведения об адресах и объёме данных, без HTTP-путей и содержимого.",
+                )}
               </p>
             )}
             <div className="dialog-actions">
@@ -988,14 +1045,14 @@ export default function App() {
                 disabled={!!exporting}
                 onClick={() => setExportChoice(null)}
               >
-                Отмена
+                {t("Отмена")}
               </button>
               <button
                 className="button primary"
                 disabled={!!exporting}
                 onClick={() => exportSession(exportChoice)}
               >
-                {exporting ? "Экспорт…" : "Сохранить HAR"}
+                {exporting ? t("Экспорт…") : t("Сохранить HAR")}
               </button>
             </div>
           </div>
@@ -1017,6 +1074,7 @@ function SSLSettings({
   seedHost: string | null;
   onClose: () => void;
 }) {
+  useLocale();
   const [scope, setScope] = useState<"all" | "selected">(
     seedHost ? "selected" : config.ssl_scope || "all",
   );
@@ -1031,7 +1089,7 @@ function SSLSettings({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   return (
-    <Modal title="Расшифровка SSL" onClose={onClose}>
+    <Modal title={t("Расшифровка SSL")} onClose={onClose}>
       <form
         onSubmit={async (event) => {
           event.preventDefault();
@@ -1058,14 +1116,14 @@ function SSLSettings({
         }}
       >
         <div className="form-content">
-          <div className="segmented" aria-label="Область SSL">
+          <div className="segmented" aria-label={t("Область SSL")}>
             <button
               type="button"
               className={scope === "all" ? "selected" : ""}
               aria-pressed={scope === "all"}
               onClick={() => setScope("all")}
             >
-              Все хосты
+              {t("Все хосты")}
             </button>
             <button
               type="button"
@@ -1073,12 +1131,12 @@ function SSLSettings({
               aria-pressed={scope === "selected"}
               onClick={() => setScope("selected")}
             >
-              Только выбранные
+              {t("Только выбранные")}
             </button>
           </div>
           {scope === "selected" && (
             <label>
-              Хосты для расшифровки
+              {t("Хосты для расшифровки")}
               <textarea
                 rows={6}
                 value={hosts}
@@ -1088,28 +1146,27 @@ function SSLSettings({
             </label>
           )}
           <p className="field-hint">
-            Один домен или IP на строку, порт необязателен. Маска *.example.com
-            включает поддомены; корневой example.com добавляется отдельно.
-            Пустой список выбранных хостов ничего не расшифровывает.
+            {t(
+              "Один домен или IP на строку, порт необязателен. Маска *.example.com включает поддомены; корневой example.com добавляется отдельно. Пустой список выбранных хостов ничего не расшифровывает.",
+            )}
           </p>
           <p className="field-hint">
-            Выбор по пути невозможен до расшифровки HTTPS. Остальные соединения
-            проходят зашифрованными. Изменения действуют на новые соединения —
-            переподключите клиент. Доверие сертификату CHLS по-прежнему
-            требуется.
+            {t(
+              "Выбор по пути невозможен до расшифровки HTTPS. Остальные соединения проходят зашифрованными. Изменения действуют на новые соединения — переподключите клиент. Доверие сертификату mitm gui по-прежнему требуется.",
+            )}
           </p>
           {error && (
             <div className="inline-error" role="alert">
-              {error}
+              {localizeMessage(error)}
             </div>
           )}
         </div>
         <footer className="modal-footer">
           <button type="button" className="button" onClick={onClose}>
-            Отмена
+            {t("Отмена")}
           </button>
           <button type="submit" className="button primary" disabled={saving}>
-            {saving ? "Сохранение…" : "Сохранить SSL"}
+            {saving ? t("Сохранение…") : t("Сохранить SSL")}
           </button>
         </footer>
       </form>
@@ -1124,6 +1181,7 @@ function RenameSessionDialog({
   item: Session;
   onClose: () => void;
 }) {
+  useLocale();
   const [name, setName] = useState(item.name);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -1133,7 +1191,7 @@ function RenameSessionDialog({
     input.current?.select();
   }, []);
   return (
-    <Modal title="Переименовать сессию" onClose={onClose}>
+    <Modal title={t("Переименовать сессию")} onClose={onClose}>
       <form
         onSubmit={async (event) => {
           event.preventDefault();
@@ -1157,7 +1215,7 @@ function RenameSessionDialog({
       >
         <div className="form-content">
           <label>
-            Название сессии
+            {t("Название сессии")}
             <input
               ref={input}
               value={name}
@@ -1168,20 +1226,21 @@ function RenameSessionDialog({
           </label>
           {error && (
             <div className="inline-error" role="alert">
-              {error}
+              {localizeMessage(error)}
             </div>
           )}
         </div>
         <footer className="modal-footer">
           <button type="button" className="button" onClick={onClose}>
-            Отмена
+            {t("Отмена")}
           </button>
           <button
             type="submit"
             className="button primary"
             disabled={saving || !name.trim()}
           >
-            {saving && <LoaderCircle size={14} className="spin" />}Сохранить
+            {saving && <LoaderCircle size={14} className="spin" />}
+            {t("Сохранить")}
           </button>
         </footer>
       </form>
@@ -1206,6 +1265,7 @@ function Traffic({
   onRule: (rule: Rule) => void;
   onConnect: () => void;
 }) {
+  useLocale();
   const { selected, setSelected, status } = useApp();
   const trafficSize = usePaneResize("traffic-v1", {
     initial: 0.6,
@@ -1268,21 +1328,21 @@ function Traffic({
     <div className="traffic-workspace" ref={trafficSize.containerRef}>
       <section
         className={`traffic-list ${selected ? "with-inspector" : ""}`}
-        aria-label="Запросы"
+        aria-label={t("Запросы")}
         style={{ flex: hasInspector ? `0 0 ${trafficSize.size}px` : 1 }}
       >
         <div className="table-head traffic-row">
-          <span>Тип</span>
-          <span>Запрос</span>
-          <span>Статус</span>
-          <span>Время</span>
-          <span>Размер</span>
+          <span>{t("Тип")}</span>
+          <span>{t("Запрос")}</span>
+          <span>{t("Статус")}</span>
+          <span>{t("Время")}</span>
+          <span>{t("Размер")}</span>
         </div>
         <div
           ref={parent}
           className="table-scroll"
           role="listbox"
-          aria-label="Перехваченные запросы"
+          aria-label={t("Перехваченные запросы")}
           tabIndex={0}
           onKeyDown={(e) => {
             if (!["ArrowDown", "ArrowUp"].includes(e.key)) return;
@@ -1348,8 +1408,10 @@ function Traffic({
                         <span
                           className="encrypted-indicator"
                           role="img"
-                          aria-label="Зашифрованное соединение"
-                          title="Зашифрованное соединение — содержимое недоступно"
+                          aria-label={t("Зашифрованное соединение")}
+                          title={t(
+                            "Зашифрованное соединение — содержимое недоступно",
+                          )}
                         >
                           <LockKeyhole size={12} aria-hidden="true" />
                         </span>
@@ -1389,53 +1451,62 @@ function Traffic({
               icon={archived ? Archive : Activity}
               title={
                 useApp.getState().flows.length
-                  ? "Запросы не найдены"
+                  ? t("Запросы не найдены")
                   : archived
-                    ? "В сессии нет запросов"
+                    ? t("В сессии нет запросов")
                     : status?.running
-                      ? "Ожидаем первый запрос"
-                      : "Ваш трафик начинается здесь"
+                      ? t("Ожидаем первый запрос")
+                      : t("Ваш трафик начинается здесь")
               }
               action={
                 !archived &&
                 !useApp.getState().flows.length && (
                   <button className="button" onClick={onConnect}>
                     <Smartphone size={14} />
-                    Подключить устройство
+                    {t("Подключить устройство")}
                   </button>
                 )
               }
             >
               {useApp.getState().flows.length
-                ? "Измените поиск или выбранные фильтры."
+                ? t("Измените поиск или выбранные фильтры.")
                 : archived
-                  ? "Сессия сохранена в архиве. Новые запросы записываются в текущую сессию."
+                  ? t(
+                      "Сессия сохранена в архиве. Новые запросы записываются в текущую сессию.",
+                    )
                   : status?.running
-                    ? "Откройте приложение на подключённом устройстве. Запросы появятся автоматически."
-                    : "Подключите телефон или настройте браузер, чтобы просматривать и изменять запросы."}
+                    ? t(
+                        "Откройте приложение на подключённом устройстве. Запросы появятся автоматически.",
+                      )
+                    : t(
+                        "Подключите телефон или настройте браузер, чтобы просматривать и изменять запросы.",
+                      )}
             </Empty>
           )}
         </div>
         <div className="table-bottom">
-          <span>{flows.length} записей</span>
-          <span>Последние сверху</span>
+          <span>
+            {flows.length}
+            {t(" записей")}
+          </span>
+          <span>{t("Последние сверху")}</span>
         </div>
       </section>
       {hasInspector && (
         <PaneSeparator
-          label="Ширина списка запросов и инспектора"
+          label={t("Ширина списка запросов и инспектора")}
           pane={trafficSize}
         />
       )}
       {selected && (
-        <section className="inspector" aria-label="Инспектор запроса">
+        <section className="inspector" aria-label={t("Инспектор запроса")}>
           <div className="inspector-heading">
             <span>
               <FileText size={14} />
-              Инспектор
+              {t("Инспектор")}
             </span>
             <IconButton
-              title="Закрыть инспектор"
+              title={t("Закрыть инспектор")}
               onClick={() => setSelected(null)}
             >
               <X size={15} />
@@ -1458,8 +1529,8 @@ function Traffic({
       )}
       {!selected && flows.length > 0 && (
         <section className="inspector inspector-placeholder">
-          <Empty icon={FileText} title="Выберите запрос">
-            Заголовки, содержимое и применённые правила появятся здесь.
+          <Empty icon={FileText} title={t("Выберите запрос")}>
+            {t("Заголовки, содержимое и применённые правила появятся здесь.")}
           </Empty>
         </section>
       )}
@@ -1481,20 +1552,21 @@ function Traffic({
                     }}
                   >
                     <Icon size={14} />
-                    Создать {kindLabel[kind]}
+                    {t("Создать ")}
+                    {kindLabel[kind]}
                   </button>
                 );
               },
             )}
           <button onClick={() => onSSLHost(context.flow.host)}>
             <ShieldCheck size={14} />
-            Расшифровывать SSL для хоста…
+            {t("Расшифровывать SSL для хоста…")}
           </button>
           <button onClick={() => onFocusHost(context.flow.host)}>
             <Filter size={14} />
             {focusedHosts.includes(context.flow.host)
-              ? "Убрать хост из фокуса"
-              : "Добавить хост в фокус"}
+              ? t("Убрать хост из фокуса")
+              : t("Добавить хост в фокус")}
           </button>
           <div className="menu-separator" />
           <button
@@ -1505,7 +1577,7 @@ function Traffic({
             }
           >
             <Copy size={14} />
-            Копировать URL
+            {t("Копировать URL")}
           </button>
         </div>
       )}
@@ -1514,18 +1586,22 @@ function Traffic({
 }
 
 function EncryptedInspector({ detail }: { detail: ConnectionFlow }) {
+  useLocale();
   return (
     <>
       <div className="request-summary">
         <div className="summary-line">
           <ShieldOff size={14} />
-          <strong>Зашифровано · {detail.protocol}</strong>
+          <strong>
+            {t("Зашифровано · ")}
+            {detail.protocol}
+          </strong>
           <span className="muted">
             {detail.state === "error"
-              ? "Ошибка"
+              ? t("Ошибка")
               : detail.state === "open"
-                ? "Соединение открыто"
-                : "Завершено"}
+                ? t("Соединение открыто")
+                : t("Завершено")}
           </span>
         </div>
         <div className="full-url">{detail.endpoint}</div>
@@ -1536,14 +1612,16 @@ function EncryptedInspector({ detail }: { detail: ConnectionFlow }) {
       {detail.error && <div className="inline-error">{detail.error}</div>}
       <div className="encrypted-details">
         {[
-          ["Отправлено", size(detail.bytes_sent || 0)],
-          ["Получено", size(detail.bytes_received || 0)],
-          ["Всего", size(detail.size)],
+          [t("Отправлено"), size(detail.bytes_sent || 0)],
+          [t("Получено"), size(detail.bytes_received || 0)],
+          [t("Всего"), size(detail.size)],
           [
-            "Длительность",
-            detail.duration !== null ? `${detail.duration} ms` : "В процессе",
+            t("Длительность"),
+            detail.duration !== null
+              ? `${detail.duration} ms`
+              : t("В процессе"),
           ],
-          ["Транспорт", detail.transport?.toUpperCase() || "TCP"],
+          [t("Транспорт"), detail.transport?.toUpperCase() || "TCP"],
         ].map(([label, value]) => (
           <div className="encrypted-detail" key={label}>
             <span>{label}</span>
@@ -1552,14 +1630,15 @@ function EncryptedInspector({ detail }: { detail: ConnectionFlow }) {
         ))}
       </div>
       <p className="padded muted">
-        {detail.experimental && "UDP-захват — экспериментальная функция. "}
+        {detail.experimental && t("UDP-захват — экспериментальная функция. ")}
         {detail.ssl_reason === "not_selected"
-          ? "Хост не выбран для расшифровки SSL. "
+          ? t("Хост не выбран для расшифровки SSL. ")
           : detail.ssl_reason === "disabled"
-            ? "При открытии соединения SSL был выключен. "
-            : "Расшифровка SSL к соединению не применялась. "}
-        HTTP-запросы, заголовки и тела недоступны. Для просмотра содержимого
-        включите SSL для нужного хоста и переподключите клиент.
+            ? t("При открытии соединения SSL был выключен. ")
+            : t("Расшифровка SSL к соединению не применялась. ")}
+        {t(
+          "HTTP-запросы, заголовки и тела недоступны. Для просмотра содержимого включите SSL для нужного хоста и переподключите клиент.",
+        )}
       </p>
     </>
   );
@@ -1572,6 +1651,7 @@ function Inspector({
   detail: HttpDetail;
   onRule: (rule: Rule) => void;
 }) {
+  useLocale();
   const [side, setSide] = useState<"request" | "response">("response"),
     [tab, setTab] = useState("body"),
     [original, setOriginal] = useState(false),
@@ -1615,12 +1695,14 @@ function Inspector({
             {detail.error ? "Error" : detail.status || "Pending"}
           </span>
           <span className="numeric">
-            {detail.duration !== null ? `${detail.duration} ms` : "В процессе"}
+            {detail.duration !== null
+              ? `${detail.duration} ms`
+              : t("В процессе")}
           </span>
           <div className="create-menu">
             <button className="button small" onClick={() => setMenu(!menu)}>
               <Plus size={12} />
-              Правило
+              {t("Правило")}
               <ChevronDown size={12} />
             </button>
             {menu && (
@@ -1674,7 +1756,9 @@ function Inspector({
           ["headers", "Headers"],
           [
             "rules",
-            `Правила${detail.rules.length ? ` · ${detail.rules.length}` : ""}`,
+            t("Правила{0}", [
+              detail.rules.length ? ` · ${detail.rules.length}` : "",
+            ]),
           ],
         ].map(([value, label]) => (
           <button
@@ -1699,14 +1783,19 @@ function Inspector({
                 <p>
                   {r.error ||
                     (r.matched === false
-                      ? "Совпадений в содержимом нет"
-                      : `${kindLabel[r.kind as Rule["kind"]] || "Мок"} · Применено${r.matches !== undefined ? ` · Совпадений: ${r.matches}` : ""}`)}
+                      ? t("Совпадений в содержимом нет")
+                      : t("{0} · Применено{1}", [
+                          kindLabel[r.kind as Rule["kind"]] || t("Мок"),
+                          r.matches !== undefined
+                            ? t(" · Совпадений: {0}", [r.matches])
+                            : "",
+                        ]))}
                 </p>
               </div>
             ))
           ) : (
             <p className="muted padded">
-              К этому запросу правила не применялись.
+              {t("К этому запросу правила не применялись.")}
             </p>
           )}
         </div>
@@ -1718,19 +1807,19 @@ function Inspector({
                 className={!original ? "selected" : ""}
                 onClick={() => setOriginal(false)}
               >
-                Итог
+                {t("Итог")}
               </button>
               <button
                 className={original ? "selected" : ""}
                 onClick={() => setOriginal(true)}
               >
-                Оригинал
+                {t("Оригинал")}
               </button>
             </div>
             {side === "response" && message?.status && (
               <span
                 className={`http-status ${message.status >= 400 ? "failure" : "success"}`}
-                title="Статус выбранной версии ответа"
+                title={t("Статус выбранной версии ответа")}
               >
                 HTTP {message.status}
               </span>
@@ -1745,7 +1834,7 @@ function Inspector({
                 </button>
               )}
               <IconButton
-                title="Копировать"
+                title={t("Копировать")}
                 disabled={!message}
                 onClick={() =>
                   copy(
@@ -1761,7 +1850,7 @@ function Inspector({
               </IconButton>
               {tab === "body" && (
                 <IconButton
-                  title="Сохранить исходные байты тела"
+                  title={t("Сохранить исходные байты тела")}
                   disabled={!message?.body_file}
                   onClick={() =>
                     window.chls
@@ -1780,8 +1869,8 @@ function Inspector({
           {!message ? (
             <div className="padded muted">
               {side === "response"
-                ? "Ответ ещё не получен или соединение было прервано."
-                : "Нет сохранённых данных."}
+                ? t("Ответ ещё не получен или соединение было прервано.")
+                : t("Нет сохранённых данных.")}
             </div>
           ) : tab === "headers" ? (
             <div className="headers-list">
@@ -1796,13 +1885,14 @@ function Inspector({
             <>
               {message.streamed && (
                 <div className="notice">
-                  Тело передано потоком. Содержимое не сохранено; Rewrite body
-                  недоступен.
+                  {t(
+                    "Тело передано потоком. Содержимое не сохранено; Rewrite body недоступен.",
+                  )}
                 </div>
               )}
               {message.truncated && (
                 <div className="notice">
-                  Показаны первые 256 KB. Полное тело можно сохранить.
+                  {t("Показаны первые 256 KB. Полное тело можно сохранить.")}
                 </div>
               )}
               <SearchBody
@@ -1820,6 +1910,7 @@ function Inspector({
 const MemoInspector = memo(Inspector);
 
 function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
+  useLocale();
   const { rules, saveRules, setError } = useApp();
   const [filter, setFilter] = useState("all"),
     [busy, setBusy] = useState(false);
@@ -1838,7 +1929,7 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
     try {
       const data = await window.chls.importRules();
       if (data === null) return;
-      if (!Array.isArray(data)) throw new Error("Ожидается массив правил");
+      if (!Array.isArray(data)) throw new Error(t("Ожидается массив правил"));
       await persist([
         ...rules,
         ...(data as Rule[]).map((r) => ({ ...r, id: crypto.randomUUID() })),
@@ -1860,19 +1951,22 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
       <div className="page-heading">
         <div>
           <h1>
-            Правила <span className="heading-count">{rules.length}</span>
+            {t("Правила ")}
+            <span className="heading-count">{rules.length}</span>
           </h1>
-          <p>Управляйте тем, что отправляют и получают ваши приложения.</p>
+          <p>
+            {t("Управляйте тем, что отправляют и получают ваши приложения.")}
+          </p>
         </div>
         <button className="button primary" onClick={() => onEdit(newRule())}>
           <Plus size={14} />
-          Новое правило
+          {t("Новое правило")}
         </button>
       </div>
       <div className="rules-toolbar">
         <div className="segmented">
           {[
-            ["all", "Все"],
+            ["all", t("Все")],
             ["rewrite", "Rewrite"],
             ["map_local", "Map Local"],
             ["block", "Blocklist"],
@@ -1893,26 +1987,26 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
             onClick={importRules}
           >
             <Upload size={14} />
-            Импорт
+            {t("Импорт")}
           </button>
           <button
             className="button subtle"
             onClick={() =>
               window.chls
-                .saveText("chls-rules.json", JSON.stringify(rules, null, 2))
+                .saveText("mitm-gui-rules.json", JSON.stringify(rules, null, 2))
                 .catch((e) => setError(e.message))
             }
           >
             <Download size={14} />
-            Экспорт
+            {t("Экспорт")}
           </button>
         </div>
       </div>
       <div className="rule-table">
         <div className="rule-table-head">
-          <span>Правило / условие</span>
-          <span>Тип</span>
-          <span>Состояние</span>
+          <span>{t("Правило / условие")}</span>
+          <span>{t("Тип")}</span>
+          <span>{t("Состояние")}</span>
           <span />
         </div>
         {visible.length ? (
@@ -1931,7 +2025,7 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
                     <strong>{rule.name}</strong>
                     <small>
                       {rule.method && `${rule.method} `}
-                      {rule.host || "Любой хост"}
+                      {rule.host || t("Любой хост")}
                       {rule.path || " / *"}
                     </small>
                   </span>
@@ -1941,7 +2035,7 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
                   className={`toggle ${rule.enabled ? "on" : ""}`}
                   role="switch"
                   aria-checked={rule.enabled}
-                  aria-label={`Включить ${rule.name}`}
+                  aria-label={t("Включить {0}", [rule.name])}
                   disabled={busy}
                   onClick={() =>
                     persist(
@@ -1955,21 +2049,21 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
                 </button>
                 <div className="rule-actions">
                   <IconButton
-                    title="Выше"
+                    title={t("Выше")}
                     disabled={busy || index === 0}
                     onClick={() => move(rule, -1)}
                   >
                     <ArrowUp size={13} />
                   </IconButton>
                   <IconButton
-                    title="Ниже"
+                    title={t("Ниже")}
                     disabled={busy || index === rules.length - 1}
                     onClick={() => move(rule, 1)}
                   >
                     <ArrowDown size={13} />
                   </IconButton>
                   <IconButton
-                    title="Дублировать"
+                    title={t("Дублировать")}
                     disabled={busy}
                     onClick={() =>
                       persist([
@@ -1977,7 +2071,7 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
                         {
                           ...rule,
                           id: crypto.randomUUID(),
-                          name: `${rule.name} · копия`,
+                          name: t("{0} · копия", [rule.name]),
                         },
                       ])
                     }
@@ -1985,7 +2079,7 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
                     <Copy size={13} />
                   </IconButton>
                   <IconButton
-                    title="Удалить правило"
+                    title={t("Удалить правило")}
                     disabled={busy}
                     onClick={() =>
                       persist(rules.filter((r) => r.id !== rule.id))
@@ -2000,7 +2094,7 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
         ) : (
           <Empty
             icon={SlidersHorizontal}
-            title="Поведение под вашим контролем"
+            title={t("Поведение под вашим контролем")}
             action={
               <div className="empty-actions">
                 {(["rewrite", "map_local", "block"] as Rule["kind"][]).map(
@@ -2018,16 +2112,18 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
               </div>
             }
           >
-            Подменяйте ответы локальными файлами, изменяйте содержимое и
-            блокируйте запросы.
+            {t(
+              "Подменяйте ответы локальными файлами, изменяйте содержимое и блокируйте запросы.",
+            )}
           </Empty>
         )}
       </div>
       <div className="rules-note">
         <BookOpen size={14} />
         <span>
-          Правила выполняются сверху вниз. Blocklist и Map Local завершают
-          обработку запроса; затем применяются Rewrite ответа.
+          {t(
+            "Правила выполняются сверху вниз. Blocklist и Map Local завершают обработку запроса; затем применяются Rewrite ответа.",
+          )}
         </span>
       </div>
     </div>
@@ -2041,6 +2137,7 @@ export function RuleEditor({
   rule: Rule;
   onClose: () => void;
 }) {
+  useLocale();
   const [draft, setDraft] = useState(() =>
       editableRule({
         ...rule,
@@ -2072,21 +2169,22 @@ export function RuleEditor({
       <header>
         <h1>
           {rules.some((r) => r.id === draft.id)
-            ? "Редактировать правило"
-            : "Новое правило"}
+            ? t("Редактировать правило")
+            : t("Новое правило")}
         </h1>
         <button
           className="button"
           type="button"
           onClick={() => window.chls.focusMain()}
         >
-          <Activity size={14} />К запросам
+          <Activity size={14} />
+          {t("К запросам")}
         </button>
       </header>
       <form onSubmit={submit} className="rule-form">
         <div className="form-content">
           <label>
-            Название
+            {t("Название")}
             <input
               required
               maxLength={200}
@@ -2097,7 +2195,7 @@ export function RuleEditor({
           </label>
           <div className="form-grid">
             <label>
-              Тип
+              {t("Тип")}
               <select
                 value={draft.kind}
                 onChange={(e) => set("kind", e.target.value as Rule["kind"])}
@@ -2109,7 +2207,7 @@ export function RuleEditor({
             </label>
             {draft.kind === "rewrite" && (
               <label>
-                Стадия
+                {t("Стадия")}
                 <select
                   value={draft.phase}
                   onChange={(e) =>
@@ -2117,13 +2215,13 @@ export function RuleEditor({
                   }
                 >
                   <option value="request" disabled={draft.action === "status"}>
-                    Запрос
+                    {t("Запрос")}
                   </option>
                   <option
                     value="response"
                     disabled={requestActions.has(draft.action)}
                   >
-                    Ответ
+                    {t("Ответ")}
                   </option>
                   <option
                     value="both"
@@ -2132,24 +2230,24 @@ export function RuleEditor({
                       draft.action === "status"
                     }
                   >
-                    Запрос и ответ
+                    {t("Запрос и ответ")}
                   </option>
                 </select>
               </label>
             )}
           </div>
-          <div className="form-divider">УСЛОВИЯ</div>
+          <div className="form-divider">{t("УСЛОВИЯ")}</div>
           <div className="form-grid host-method">
             <label>
-              Хост
+              {t("Хост")}
               <input
-                placeholder="api.example.com или *.example.com"
+                placeholder={t("api.example.com или *.example.com")}
                 value={draft.host}
                 onChange={(e) => set("host", e.target.value)}
               />
             </label>
             <label>
-              Метод
+              {t("Метод")}
               <select
                 value={draft.method}
                 onChange={(e) => set("method", e.target.value)}
@@ -2165,7 +2263,7 @@ export function RuleEditor({
                   "OPTIONS",
                 ].map((m) => (
                   <option key={m} value={m}>
-                    {m || "Любой"}
+                    {m || t("Любой")}
                   </option>
                 ))}
               </select>
@@ -2173,7 +2271,7 @@ export function RuleEditor({
           </div>
           <div className="form-grid path-match">
             <label>
-              Путь
+              {t("Путь")}
               <input
                 placeholder="/api/config"
                 value={draft.path}
@@ -2189,13 +2287,13 @@ export function RuleEditor({
               />
             </label>
             <label>
-              Сопоставление
+              {t("Сопоставление")}
               <select
                 value={draft.match}
                 onChange={(e) => set("match", e.target.value as Rule["match"])}
               >
-                <option value="exact">Точное</option>
-                <option value="contains">Содержит</option>
+                <option value="exact">{t("Точное")}</option>
+                <option value="contains">{t("Содержит")}</option>
                 <option value="regex">Regex</option>
               </select>
             </label>
@@ -2210,15 +2308,16 @@ export function RuleEditor({
             />
           </label>
           <p className="field-hint">
-            Параметры без «?». Пустое поле — любые параметры. Сопоставление
-            применяется отдельно к пути и query string. Полный URL можно
-            вставить в поле пути.
+            {t(
+              "Параметры без «?». Пустое поле — любые параметры. Сопоставление применяется отдельно к пути и query string. Полный URL можно вставить в поле пути.",
+            )}
           </p>
           <p className="field-hint">
-            Пустой хост — любой. Для любого пути выберите «Содержит» и оставьте
-            путь пустым.
+            {t(
+              "Пустой хост — любой. Для любого пути выберите «Содержит» и оставьте путь пустым.",
+            )}
           </p>
-          <div className="form-divider">ДЕЙСТВИЕ</div>
+          <div className="form-divider">{t("ДЕЙСТВИЕ")}</div>
           {draft.kind === "block" ? (
             <>
               <label className="checkbox-label">
@@ -2227,11 +2326,11 @@ export function RuleEditor({
                   checked={draft.disconnect}
                   onChange={(e) => set("disconnect", e.target.checked)}
                 />
-                Оборвать соединение без ответа
+                {t("Оборвать соединение без ответа")}
               </label>
               {!draft.disconnect && (
                 <label>
-                  HTTP-статус
+                  {t("HTTP-статус")}
                   <input
                     type="number"
                     min={100}
@@ -2246,13 +2345,13 @@ export function RuleEditor({
           ) : draft.kind === "map_local" ? (
             <>
               <label>
-                Локальный файл
+                {t("Локальный файл")}
                 <div className="file-input">
                   <input
                     required
                     value={draft.file}
                     onChange={(e) => set("file", e.target.value)}
-                    placeholder="Выберите файл на компьютере"
+                    placeholder={t("Выберите файл на компьютере")}
                   />
                   <button
                     type="button"
@@ -2280,7 +2379,7 @@ export function RuleEditor({
                   />
                 </label>
                 <label>
-                  HTTP-статус
+                  {t("HTTP-статус")}
                   <input
                     type="number"
                     required
@@ -2292,7 +2391,7 @@ export function RuleEditor({
                 </label>
               </div>
               <p className="field-hint">
-                Файл читается при каждом запросе. Максимум 8 MB.
+                {t("Файл читается при каждом запросе. Максимум 8 MB.")}
               </p>
             </>
           ) : (
@@ -2303,17 +2402,17 @@ export function RuleEditor({
           )}
           {error && (
             <div className="inline-error" role="alert">
-              {error}
+              {localizeMessage(error)}
             </div>
           )}
         </div>
         <footer className="modal-footer">
           <button type="button" className="button" onClick={onClose}>
-            Отмена
+            {t("Отмена")}
           </button>
           <button type="submit" className="button primary" disabled={saving}>
-            {saving && <LoaderCircle size={14} className="spin" />}Сохранить
-            правило
+            {saving && <LoaderCircle size={14} className="spin" />}
+            {t("Сохранить правило")}
           </button>
         </footer>
       </form>
@@ -2334,6 +2433,7 @@ function Connection({
   onStart: () => void;
   busy: boolean;
 }) {
+  useLocale();
   const { status, setError } = useApp();
   const [device, setDevice] = useState<"android" | "iphone">(
     localStorage.getItem("chls-device") === "iphone" ? "iphone" : "android",
@@ -2375,7 +2475,7 @@ function Connection({
   }, [wgRunning]);
   const clients = [...new Set(useApp((s) => s.flows).map((f) => f.client))];
   return (
-    <Modal title="Подключить устройство" onClose={onClose} wide>
+    <Modal title={t("Подключить устройство")} onClose={onClose} wide>
       <div className="connection-layout">
         <div className="connection-main">
           <div className="connection-intro">
@@ -2383,8 +2483,8 @@ function Connection({
               <Smartphone size={22} />
             </span>
             <div>
-              <h3>Подключение телефона</h3>
-              <p>Выберите устройство и способ подключения.</p>
+              <h3>{t("Подключение телефона")}</h3>
+              <p>{t("Выберите устройство и способ подключения.")}</p>
             </div>
           </div>
           <div className="connection-tabs segmented">
@@ -2400,19 +2500,19 @@ function Connection({
               onClick={() => setTab("http")}
             >
               <Globe size={14} />
-              HTTP-прокси
+              {t("HTTP-прокси")}
             </button>
           </div>
           <div className="certificate-callout">
             <div className="certificate-callout-main">
               <div className="certificate-callout-heading">
                 <Download size={16} />
-                <strong>Сертификат для HTTPS</strong>
+                <strong>{t("Сертификат для HTTPS")}</strong>
               </div>
               <button
                 className="certificate-address"
-                title="Копировать адрес"
-                aria-label="Копировать адрес mitm.it"
+                title={t("Копировать адрес")}
+                aria-label={t("Копировать адрес mitm.it")}
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText("http://mitm.it");
@@ -2425,23 +2525,27 @@ function Connection({
               >
                 <span>mitm.it</span>
                 {addressCopied ? <Check size={16} /> : <Copy size={16} />}
-                <small>{addressCopied ? "Скопировано" : "Копировать"}</small>
+                <small>
+                  {addressCopied ? t("Скопировано") : t("Копировать")}
+                </small>
               </button>
             </div>
             <div className="certificate-callout-footer">
               <span>
-                Откройте на телефоне, подключённом через WireGuard или прокси.
+                {t(
+                  "Откройте на телефоне, подключённом через WireGuard или прокси.",
+                )}
               </span>
               <button
                 className="button small"
                 onClick={() =>
                   window.chls
-                    .download("/certificate", "chls-ca.cer")
+                    .download("/certificate", "mitm-gui-ca.cer")
                     .catch((e) => setError(e.message))
                 }
               >
                 <Download size={13} />
-                Сохранить CA
+                {t("Сохранить CA")}
               </button>
             </div>
           </div>
@@ -2450,21 +2554,27 @@ function Connection({
               <div className="step">
                 <span>1</span>
                 <div>
-                  <h4>Запустите WireGuard</h4>
+                  <h4>{t("Запустите WireGuard")}</h4>
                   <p>
-                    Включите WireGuard в настройках справа и начните захват.
+                    {t(
+                      "Включите WireGuard в настройках справа и начните захват.",
+                    )}
                   </p>
                 </div>
               </div>
               <div className="step">
                 <span>2</span>
                 <div>
-                  <h4>Добавьте туннель на телефоне</h4>
+                  <h4>{t("Добавьте туннель на телефоне")}</h4>
                   <p>
                     {device === "android"
-                      ? "В приложении WireGuard нажмите «+» → «Сканировать QR-код», отсканируйте код ниже и задайте имя туннеля."
-                      : "В приложении WireGuard нажмите «+» → «Создать из QR-кода», отсканируйте код ниже и разрешите добавление VPN-конфигурации."}{" "}
-                    Компьютер должен быть доступен по указанному адресу.
+                      ? t(
+                          "В приложении WireGuard нажмите «+» → «Сканировать QR-код», отсканируйте код ниже и задайте имя туннеля.",
+                        )
+                      : t(
+                          "В приложении WireGuard нажмите «+» → «Создать из QR-кода», отсканируйте код ниже и разрешите добавление VPN-конфигурации.",
+                        )}{" "}
+                    {t("Компьютер должен быть доступен по указанному адресу.")}
                   </p>
                 </div>
               </div>
@@ -2472,7 +2582,7 @@ function Connection({
                 <>
                   <div className="endpoint-control">
                     <label>
-                      Адрес компьютера
+                      {t("Адрес компьютера")}
                       <input
                         value={endpoint}
                         onChange={(e) => setEndpoint(e.target.value)}
@@ -2484,7 +2594,7 @@ function Connection({
                       disabled={loading}
                       onClick={loadProfile}
                     >
-                      Обновить QR
+                      {t("Обновить QR")}
                     </button>
                   </div>
                   {wgError && <div className="inline-error">{wgError}</div>}
@@ -2501,21 +2611,22 @@ function Connection({
                       <div>
                         <span className="tag">UDP · {config.wg_port}</span>
                         <p>
-                          Профиль для одного устройства.
+                          {t("Профиль для одного устройства.")}
                           <br />
-                          Не используйте его одновременно на нескольких
-                          телефонах.
+                          {t(
+                            "Не используйте его одновременно на нескольких телефонах.",
+                          )}
                         </p>
                         <button
                           className="button small"
                           onClick={() =>
                             window.chls
-                              .saveText("chls.conf", wg)
+                              .saveText("mitm-gui.conf", wg)
                               .catch((e) => setError(e.message))
                           }
                         >
                           <Download size={13} />
-                          Сохранить .conf
+                          {t("Сохранить .conf")}
                         </button>
                       </div>
                     </div>
@@ -2524,18 +2635,17 @@ function Connection({
               ) : (
                 <div className="setup-placeholder">
                   <Network size={21} />
-                  <span>QR-код появится после запуска WireGuard</span>
+                  <span>{t("QR-код появится после запуска WireGuard")}</span>
                 </div>
               )}
               <div className="step">
                 <span>3</span>
                 <div>
-                  <h4>Включите туннель и проверьте HTTPS</h4>
+                  <h4>{t("Включите туннель и проверьте HTTPS")}</h4>
                   <p>
-                    Включите переключатель рядом с туннелем в WireGuard. IPv4
-                    направляется в туннель. IPv6 в этой версии не захватывается
-                    и может идти напрямую. Другой VPN может конфликтовать с
-                    подключением.
+                    {t(
+                      "Включите переключатель рядом с туннелем в WireGuard. IPv4 направляется в туннель. IPv6 в этой версии не захватывается и может идти напрямую. Другой VPN может конфликтовать с подключением.",
+                    )}
                   </p>
                 </div>
               </div>
@@ -2545,35 +2655,41 @@ function Connection({
               <div className="step">
                 <span>1</span>
                 <div>
-                  <h4>Подключитесь к одной сети</h4>
+                  <h4>{t("Подключитесь к одной сети")}</h4>
                   <p>
-                    Телефон и компьютер должны видеть друг друга в локальной
-                    сети.
+                    {t(
+                      "Телефон и компьютер должны видеть друг друга в локальной сети.",
+                    )}
                   </p>
                 </div>
               </div>
               <div className="step">
                 <span>2</span>
                 <div>
-                  <h4>Укажите прокси в настройках Wi-Fi</h4>
+                  <h4>{t("Укажите прокси в настройках Wi-Fi")}</h4>
                   <p>
                     {device === "android"
-                      ? "Настройки → Wi-Fi / Интернет → текущая сеть → Изменить (значок карандаша) → Дополнительные настройки → Прокси → Вручную. Введите сервер и порт, затем сохраните."
-                      : "Настройки → Wi-Fi → ⓘ рядом с текущей сетью → Настройка прокси → Вручную. Введите сервер и порт, затем нажмите «Сохранить». Аутентификацию оставьте выключенной."}
+                      ? t(
+                          "Настройки → Wi-Fi / Интернет → текущая сеть → Изменить (значок карандаша) → Дополнительные настройки → Прокси → Вручную. Введите сервер и порт, затем сохраните.",
+                        )
+                      : t(
+                          "Настройки → Wi-Fi → ⓘ рядом с текущей сетью → Настройка прокси → Вручную. Введите сервер и порт, затем нажмите «Сохранить». Аутентификацию оставьте выключенной.",
+                        )}
                   </p>
                   {device === "android" && (
                     <p className="platform-hint">
-                      Названия пунктов зависят от производителя. При
-                      необходимости найдите «Прокси» в настройках Wi-Fi.
+                      {t(
+                        "Названия пунктов зависят от производителя. При необходимости найдите «Прокси» в настройках Wi-Fi.",
+                      )}
                     </p>
                   )}
                   <div className="proxy-values">
                     <div>
-                      <small>Сервер</small>
+                      <small>{t("Сервер")}</small>
                       <code>{endpoint}</code>
                     </div>
                     <div>
-                      <small>Порт</small>
+                      <small>{t("Порт")}</small>
                       <code>{config.port}</code>
                     </div>
                   </div>
@@ -2582,12 +2698,14 @@ function Connection({
               <div className="step">
                 <span>3</span>
                 <div>
-                  <h4>Откройте mitm.it в браузере телефона</h4>
+                  <h4>{t("Откройте mitm.it в браузере телефона")}</h4>
                   <p>
                     {httpRunning
-                      ? "Прокси запущен."
-                      : "Сначала включите HTTP-прокси и запустите захват."}{" "}
-                    Скачайте сертификат для вашей системы.
+                      ? t("Прокси запущен.")
+                      : t(
+                          "Сначала включите HTTP-прокси и запустите захват.",
+                        )}{" "}
+                    {t("Скачайте сертификат для вашей системы.")}
                   </p>
                 </div>
               </div>
@@ -2595,9 +2713,13 @@ function Connection({
           )}
           <div className="certificate-instructions">
             <div className="certificate-instructions-heading">
-              <h4>Установка сертификата</h4>
+              <h4>{t("Установка сертификата")}</h4>
               <div className="device-selector">
-                <div className="segmented" role="group" aria-label="Устройство">
+                <div
+                  className="segmented"
+                  role="group"
+                  aria-label={t("Устройство")}
+                >
                   {(
                     [
                       ["android", "Android"],
@@ -2623,50 +2745,55 @@ function Connection({
               {device === "android" ? (
                 <>
                   <li>
-                    <strong>Скачайте сертификат.</strong> Откройте mitm.it в
-                    браузере подключённого телефона и выберите Android.
+                    <strong>{t("Скачайте сертификат.")}</strong>
+                    {t(
+                      " Откройте mitm.it в браузере подключённого телефона и выберите Android.",
+                    )}
                   </li>
                   <li>
-                    <strong>Откройте настройки сертификатов.</strong> Настройки
-                    → Безопасность и конфиденциальность → Дополнительные
-                    настройки безопасности → Шифрование и учётные данные →
-                    Установить сертификат → Сертификат ЦС.
+                    <strong>{t("Откройте настройки сертификатов.")}</strong>
+                    {t(
+                      " Настройки → Безопасность и конфиденциальность → Дополнительные настройки безопасности → Шифрование и учётные данные → Установить сертификат → Сертификат ЦС.",
+                    )}
                   </li>
                   <li>
-                    <strong>Выберите скачанный файл.</strong> Подтвердите
-                    установку и разблокировку устройства. Если пункты называются
-                    иначе, найдите «Сертификат ЦС» в поиске настроек.
+                    <strong>{t("Выберите скачанный файл.")}</strong>
+                    {t(
+                      " Подтвердите установку и разблокировку устройства. Если пункты называются иначе, найдите «Сертификат ЦС» в поиске настроек.",
+                    )}
                   </li>
                   <li>
-                    <strong>Разрешите доверие в debug-сборке.</strong>{" "}
-                    Приложение должно доверять пользовательскому CA через
-                    Network Security Config; отдельный pinning также требует
-                    debug-настройки.
+                    <strong>{t("Разрешите доверие в debug-сборке.")}</strong>{" "}
+                    {t(
+                      "Приложение должно доверять пользовательскому CA через Network Security Config; отдельный pinning также требует debug-настройки.",
+                    )}
                   </li>
                 </>
               ) : (
                 <>
                   <li>
-                    <strong>Скачайте профиль.</strong> Откройте mitm.it в
-                    Safari, выберите iOS и нажмите «Разрешить» для загрузки
-                    профиля.
+                    <strong>{t("Скачайте профиль.")}</strong>
+                    {t(
+                      " Откройте mitm.it в Safari, выберите iOS и нажмите «Разрешить» для загрузки профиля.",
+                    )}
                   </li>
                   <li>
-                    <strong>Установите профиль.</strong> Настройки → Основные →
-                    VPN и управление устройством → профиль mitmproxy →
-                    Установить. Введите код-пароль и подтвердите установку.
-                    Также можно открыть пункт «Профиль загружен» на главном
-                    экране настроек.
+                    <strong>{t("Установите профиль.")}</strong>
+                    {t(
+                      " Настройки → Основные → VPN и управление устройством → профиль mitmproxy → Установить. Введите код-пароль и подтвердите установку. Также можно открыть пункт «Профиль загружен» на главном экране настроек.",
+                    )}
                   </li>
                   <li>
-                    <strong>Включите полное доверие.</strong> Настройки →
-                    Основные → Об этом устройстве → Доверие сертификатам →
-                    включите доверие для mitmproxy и подтвердите.
+                    <strong>{t("Включите полное доверие.")}</strong>
+                    {t(
+                      " Настройки → Основные → Об этом устройстве → Доверие сертификатам → включите доверие для mitmproxy и подтвердите.",
+                    )}
                   </li>
                   <li>
-                    <strong>Проверьте своё приложение.</strong> Откройте экран,
-                    который отправляет запросы. При собственном pinning
-                    настройте его debug-поведение для работы с прокси.
+                    <strong>{t("Проверьте своё приложение.")}</strong>
+                    {t(
+                      " Откройте экран, который отправляет запросы. При собственном pinning настройте его debug-поведение для работы с прокси.",
+                    )}
                   </li>
                 </>
               )}
@@ -2674,7 +2801,7 @@ function Connection({
           </div>
         </div>
         <aside className="connection-settings">
-          <div className="settings-caption">НАСТРОЙКИ ЗАХВАТА</div>
+          <div className="settings-caption">{t("НАСТРОЙКИ ЗАХВАТА")}</div>
           <label className="checkbox-label">
             <input
               type="checkbox"
@@ -2682,10 +2809,10 @@ function Connection({
               checked={config.http}
               onChange={(e) => setConfig({ ...config, http: e.target.checked })}
             />
-            HTTP-прокси
+            {t("HTTP-прокси")}
           </label>
           <label>
-            TCP-порт
+            {t("TCP-порт")}
             <input
               type="number"
               min={1024}
@@ -2710,7 +2837,7 @@ function Connection({
             WireGuard
           </label>
           <label>
-            UDP-порт
+            {t("UDP-порт")}
             <input
               type="number"
               min={1024}
@@ -2730,12 +2857,14 @@ function Connection({
               checked={config.lan}
               onChange={(e) => setConfig({ ...config, lan: e.target.checked })}
             />
-            Доступ из локальной сети
+            {t("Доступ из локальной сети")}
           </label>
           <p className="field-hint">
-            Для телефона включите доступ из сети. Если подключения нет,
-            проверьте брандмауэр Windows: TCP {config.port} и UDP{" "}
-            {config.wg_port}.
+            {t(
+              "Для телефона включите доступ из сети. Если подключения нет, проверьте брандмауэр Windows: TCP ",
+            )}
+            {config.port}
+            {t(" и UDP")} {config.wg_port}.
           </p>
           <button
             className={`button full ${status?.running ? "" : "primary"}`}
@@ -2749,22 +2878,25 @@ function Connection({
             ) : (
               <Play size={12} />
             )}{" "}
-            {status?.running ? "Остановить" : "Начать захват"}
+            {status?.running ? t("Остановить") : t("Начать захват")}
           </button>
           <div className="connection-checks">
             <div>
               <span
                 className={`status-dot ${wgRunning || httpRunning ? "live" : ""}`}
               />
-              Слушатель {wgRunning || httpRunning ? "запущен" : "остановлен"}
+              {t("Слушатель ")}
+              {wgRunning || httpRunning ? t("запущен") : t("остановлен")}
             </div>
             <div>
               <span className={`status-dot ${clients.length ? "live" : ""}`} />
-              Клиентов в сессии: {clients.length}
+              {t("Клиентов в сессии: ")}
+              {clients.length}
             </div>
             <p>
-              Работу туннеля проверяйте в WireGuard. Наличие HTTPS-запроса в
-              списке подтверждает расшифровку.
+              {t(
+                "Работу туннеля проверяйте в WireGuard. Наличие HTTPS-запроса в списке подтверждает расшифровку.",
+              )}
             </p>
           </div>
         </aside>

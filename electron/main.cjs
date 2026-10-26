@@ -15,6 +15,7 @@ const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const WebSocket = require("ws");
 const { ScriptLibrary } = require("./script-library.cjs");
+const translations = require("./locales/en.json");
 
 let window,
   backend,
@@ -28,10 +29,64 @@ const editors = new Map();
 if (process.env.CHLS_USER_DATA) {
   fs.mkdirSync(process.env.CHLS_USER_DATA, { recursive: true });
   app.setPath("userData", path.resolve(process.env.CHLS_USER_DATA));
+} else {
+  // Reuse an existing profile when upgrading from the former CHLS name.
+  for (const name of ["CHLS", "chls"]) {
+    const legacy = path.join(app.getPath("appData"), name);
+    if (fs.existsSync(path.join(legacy, "engine"))) {
+      app.setPath("userData", legacy);
+      break;
+    }
+  }
 }
 const allowed =
   /^\/(status|recording|mocks(?:\/(?:validate|control|convert))?|capture\/(start|stop|ssl)|wireguard|certificate|rules(?:\/[a-zA-Z0-9-]+)?|sessions(?:\/[a-zA-Z0-9-]+(?:\/export)?)?|flows(?:\/[a-zA-Z0-9-]+(?:\/body\/(?:original_)?(?:request|response))?)?)(?:\?.*)?$/;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+let languagePreference;
+function language() {
+  if (!languagePreference) {
+    try {
+      languagePreference = JSON.parse(
+        fs.readFileSync(
+          path.join(app.getPath("userData"), "language.json"),
+          "utf8",
+        ),
+      ).preference;
+    } catch {}
+    if (!["auto", "ru", "en"].includes(languagePreference))
+      languagePreference = "auto";
+  }
+  return {
+    preference: languagePreference,
+    systemLocale: process.env.CHLS_SYSTEM_LOCALE || app.getLocale(),
+  };
+}
+function nativeT(source, values = []) {
+  const { preference, systemLocale } = language();
+  const russian =
+    preference === "ru" ||
+    (preference === "auto" && /^ru(?:-|_|$)/i.test(systemLocale));
+  return (russian ? source : (translations[source] ?? source)).replace(
+    /\{(\d+)\}/g,
+    (match, index) => (index < values.length ? String(values[index]) : match),
+  );
+}
+ipcMain.on("get-language", (event) => {
+  event.returnValue = language();
+});
+ipcMain.handle("set-language", (event, preference) => {
+  trusted(event);
+  if (!["auto", "ru", "en"].includes(preference))
+    throw new Error("Invalid language");
+  const file = path.join(app.getPath("userData"), "language.json");
+  fs.writeFileSync(file + ".tmp", JSON.stringify({ preference }), {
+    mode: 0o600,
+  });
+  fs.renameSync(file + ".tmp", file);
+  languagePreference = preference;
+  for (const target of BrowserWindow.getAllWindows())
+    target.webContents.send("language-changed", preference);
+});
 
 async function request(route, method = "GET", data, timeout = 20000) {
   if (
@@ -112,7 +167,9 @@ async function startBackend() {
     ? path.join(
         process.resourcesPath,
         "backend",
-        process.platform === "win32" ? "chls-engine.exe" : "chls-engine",
+        process.platform === "win32"
+          ? "mitm-gui-engine.exe"
+          : "mitm-gui-engine",
       )
     : python;
   const args = app.isPackaged
@@ -143,7 +200,10 @@ async function startBackend() {
   });
   backend.on("exit", (code) => {
     failure = new Error(
-      `Движок завершился (${code}). Лог: ${path.join(dataPath, "engine.log")}`,
+      nativeT("Движок завершился ({0}). Лог: {1}", [
+        code,
+        path.join(dataPath, "engine.log"),
+      ]),
     );
     if (!quitting)
       window?.webContents.send("backend:events", [
@@ -160,7 +220,9 @@ async function startBackend() {
     await sleep(200);
   }
   throw new Error(
-    `Движок не запустился. Лог: ${path.join(dataPath, "engine.log")}`,
+    nativeT("Движок не запустился. Лог: {0}", [
+      path.join(dataPath, "engine.log"),
+    ]),
   );
 }
 
@@ -180,11 +242,12 @@ function configureWindow(target) {
   target.webContents.on("will-prevent-unload", (event) => {
     const choice = dialog.showMessageBoxSync(target, {
       type: "question",
-      title: "Несохранённый сценарий",
-      message: "В сценарии есть несохранённые изменения.",
-      detail:
+      title: nativeT("Несохранённый сценарий"),
+      message: nativeT("В сценарии есть несохранённые изменения."),
+      detail: nativeT(
         "Вернитесь в редактор и нажмите Ctrl+S, чтобы сохранить их в библиотеке.",
-      buttons: ["Вернуться", "Закрыть без сохранения"],
+      ),
+      buttons: [nativeT("Вернуться"), nativeT("Закрыть без сохранения")],
       defaultId: 0,
       cancelId: 0,
     });
@@ -231,7 +294,7 @@ ipcMain.handle("open-rule-editor", async (event, rule) => {
     height: 840,
     minWidth: 520,
     minHeight: 480,
-    title: "Правило — CHLS",
+    title: nativeT("Правило — mitm gui"),
     backgroundColor: "#151618",
     autoHideMenuBar: true,
     show: false,
@@ -284,14 +347,14 @@ ipcMain.handle("choose-file", async (event) => {
   const owner = trusted(event);
   const result = await dialog.showOpenDialog(owner, {
     properties: ["openFile"],
-    title: "Файл для Map Local",
+    title: nativeT("Файл для Map Local"),
   });
   return result.canceled ? null : result.filePaths[0];
 });
 ipcMain.handle("choose-mock-folder", async (event) => {
   const owner = trusted(event);
   const result = await dialog.showOpenDialog(owner, {
-    title: "Папка с JSON для моков",
+    title: nativeT("Папка с JSON для моков"),
     properties: ["openDirectory"],
   });
   return result.canceled ? null : result.filePaths[0];
@@ -308,13 +371,15 @@ for (const action of ["read", "save", "select", "remove"]) {
 ipcMain.handle("import-mock-script", async (event) => {
   const owner = trusted(event);
   const result = await dialog.showOpenDialog(owner, {
-    title: "Открыть сценарий",
+    title: nativeT("Открыть сценарий"),
     properties: ["openFile"],
-    filters: [{ name: "Python / CHLS", extensions: ["py", "chls", "txt"] }],
+    filters: [
+      { name: "Python / legacy CHLS", extensions: ["py", "chls", "txt"] },
+    ],
   });
   if (result.canceled) return null;
   if ((await fs.promises.stat(result.filePaths[0])).size > 800000)
-    throw new Error("Сценарий слишком большой");
+    throw new Error(nativeT("Сценарий слишком большой"));
   return {
     name: path.basename(result.filePaths[0], path.extname(result.filePaths[0])),
     source: await fs.promises.readFile(result.filePaths[0], "utf8"),
@@ -368,7 +433,7 @@ ipcMain.handle("export-session", async (event, id, name, format = "http") => {
       .replace(/[. ]+$/, "")
       .slice(0, 120) || "session";
   const result = await dialog.showSaveDialog(window, {
-    title: "Экспортировать сессию",
+    title: nativeT("Экспортировать сессию"),
     defaultPath: filename + (format === "charles" ? "-charles.har" : ".har"),
     filters: [{ name: "HTTP Archive (HAR)", extensions: ["har"] }],
   });
@@ -401,7 +466,7 @@ ipcMain.handle("import-rules", async (event) => {
   });
   if (result.canceled) return null;
   const stat = await fs.promises.stat(result.filePaths[0]);
-  if (stat.size > 2_000_000) throw new Error("Файл слишком большой");
+  if (stat.size > 2_000_000) throw new Error(nativeT("Файл слишком большой"));
   return JSON.parse(await fs.promises.readFile(result.filePaths[0], "utf8"));
 });
 
@@ -409,7 +474,7 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
-        label: "CHLS",
+        label: "mitm gui",
         submenu: [{ role: "about" }, { type: "separator" }, { role: "quit" }],
       },
       {
@@ -442,7 +507,7 @@ app.whenReady().then(async () => {
     height: 940,
     minWidth: 1000,
     minHeight: 640,
-    title: "CHLS",
+    title: "mitm gui",
     backgroundColor: "#151618",
     autoHideMenuBar: true,
     webPreferences: {
@@ -466,7 +531,7 @@ app.whenReady().then(async () => {
     await backendReady;
     window.webContents.send("backend:events", [{ type: "resync" }]);
   } catch (error) {
-    dialog.showErrorBox("CHLS: движок недоступен", error.message);
+    dialog.showErrorBox(nativeT("mitm gui: движок недоступен"), error.message);
   }
   app.on("activate", () => window?.show());
 });

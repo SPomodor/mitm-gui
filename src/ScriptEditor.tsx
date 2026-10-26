@@ -1,3 +1,4 @@
+import { t, useLocale } from "./i18n";
 import { useEffect, useId, useRef } from "react";
 import { Search } from "lucide-react";
 import { Annotation, Compartment, EditorState } from "@codemirror/state";
@@ -55,11 +56,11 @@ function searchPanel(view: EditorView): Panel {
   const dom = document.createElement("div");
   dom.className = "script-search";
   dom.setAttribute("role", "search");
-  dom.setAttribute("aria-label", "Поиск в скрипте");
+  dom.setAttribute("aria-label", t("Поиск в скрипте"));
   const input = document.createElement("input");
   input.type = "text";
-  input.placeholder = "Найти в скрипте…";
-  input.setAttribute("aria-label", "Найти в скрипте");
+  input.placeholder = t("Найти в скрипте…");
+  input.setAttribute("aria-label", t("Найти в скрипте"));
   input.setAttribute("main-field", "true");
   const count = document.createElement("span");
   count.className = "script-search-count";
@@ -75,13 +76,13 @@ function searchPanel(view: EditorView): Panel {
     element.onclick = action;
     return element;
   };
-  const previous = button("Предыдущее совпадение в скрипте", "↑", () =>
+  const previous = button(t("Предыдущее совпадение в скрипте"), "↑", () =>
     findPrevious(view),
   );
-  const next = button("Следующее совпадение в скрипте", "↓", () =>
+  const next = button(t("Следующее совпадение в скрипте"), "↓", () =>
     findNext(view),
   );
-  const close = button("Закрыть поиск в скрипте", "×", () => {
+  const close = button(t("Закрыть поиск в скрипте"), "×", () => {
     closeSearchPanel(view);
     view.focus();
   });
@@ -146,6 +147,7 @@ export default function ScriptEditor({
   onChange: (value: string) => void;
   readOnly?: boolean;
 }) {
+  const locale = useLocale();
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
@@ -177,12 +179,6 @@ export default function ScriptEditor({
             ...defaultKeymap,
             ...historyKeymap,
           ]),
-          EditorView.contentAttributes.of({
-            "aria-label": "Код сценария",
-            "aria-describedby": hintId,
-            "aria-multiline": "true",
-            spellcheck: "false",
-          }),
           EditorView.updateListener.of((update) => {
             if (
               update.docChanged &&
@@ -201,9 +197,24 @@ export default function ScriptEditor({
   }, [hintId]);
   useEffect(() => {
     editor.current?.dispatch({
-      effects: editable.current.reconfigure(EditorState.readOnly.of(readOnly)),
+      effects: editable.current.reconfigure([
+        EditorState.readOnly.of(readOnly),
+        EditorView.contentAttributes.of({
+          "aria-label": t("Код сценария"),
+          "aria-describedby": hintId,
+          "aria-multiline": "true",
+          spellcheck: "false",
+        }),
+      ]),
     });
-  }, [readOnly]);
+  }, [readOnly, locale, hintId]);
+  useEffect(() => {
+    const view = editor.current;
+    if (view && searchPanelOpen(view.state)) {
+      closeSearchPanel(view);
+      openSearchPanel(view);
+    }
+  }, [locale]);
   useEffect(() => {
     const view = editor.current;
     if (view && view.state.doc.toString() !== value) {
@@ -236,20 +247,26 @@ export default function ScriptEditor({
       }}
     >
       <div className="script-editor-tools">
-        <span title="Tab — отступ, Shift+Tab — убрать отступ. Ctrl+M переключает Tab на переход между элементами.">
-          Python · Tab: 4 пробела
+        <span
+          title={t(
+            "Tab — отступ, Shift+Tab — убрать отступ. Ctrl+M переключает Tab на переход между элементами.",
+          )}
+        >
+          {t("Python · Tab: 4 пробела")}
         </span>
         <span id={hintId} className="sr-only">
-          Tab добавляет отступ, Shift+Tab убирает. Для перехода из редактора к
-          другим элементам нажмите Ctrl+M, затем Tab.
+          {t(
+            "Tab добавляет отступ, Shift+Tab убирает. Для перехода из редактора к другим элементам нажмите Ctrl+M, затем Tab.",
+          )}
         </span>
         <button
           type="button"
           className="text-button"
-          aria-label="Открыть поиск в скрипте"
+          aria-label={t("Открыть поиск в скрипте")}
           onClick={() => editor.current && openSearchPanel(editor.current)}
         >
-          <Search size={12} /> Найти · Ctrl+F
+          <Search size={12} />
+          {t(" Найти · Ctrl+F")}
         </button>
       </div>
       <div className="script-editor-content" ref={host} />

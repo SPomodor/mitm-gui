@@ -119,7 +119,7 @@ def apply_rules(flow: http.HTTPFlow, rules: list[Rule], phase: str, max_body: in
                 if rule.disconnect:
                     flow.kill()
                 else:
-                    flow.response = http.Response.make(rule.status, b'Blocked by CHLS', {'content-type': 'text/plain; charset=utf-8'})
+                    flow.response = http.Response.make(rule.status, b'Blocked by mitm gui', {'content-type': 'text/plain; charset=utf-8'})
                 trace.append(entry)
                 break
             if rule.kind == 'map_local':

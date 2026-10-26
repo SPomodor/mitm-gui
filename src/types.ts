@@ -156,6 +156,11 @@ export interface ScriptLibraryData {
 declare global {
   interface Window {
     chls: {
+      language: { preference: "auto" | "ru" | "en"; systemLocale: string };
+      setLanguage: (preference: "auto" | "ru" | "en") => Promise<void>;
+      onLanguage: (
+        callback: (preference: "auto" | "ru" | "en") => void,
+      ) => () => void;
       openRuleEditor: (rule: Rule) => Promise<void>;
       ruleEditorData: () => Promise<Rule>;
       closeRuleEditor: () => Promise<void>;

@@ -19,11 +19,15 @@ const http = require("node:http");
   const launch = (profile = data) =>
     electron.launch({
       executablePath: path.resolve(
-        process.env.CHLS_SMOKE_BUILD_DIR || "release/0.8.5",
-        "win-unpacked/CHLS.exe",
+        process.env.CHLS_SMOKE_BUILD_DIR || "release",
+        "win-unpacked/mitm gui.exe",
       ),
       args: [],
-      env: { ...process.env, CHLS_USER_DATA: profile },
+      env: {
+        ...process.env,
+        CHLS_SYSTEM_LOCALE: "ru-RU",
+        CHLS_USER_DATA: profile,
+      },
     });
   const proxy = (pathname, method = "GET") =>
     new Promise((resolve, reject) => {

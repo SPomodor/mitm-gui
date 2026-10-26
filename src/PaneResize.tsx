@@ -1,3 +1,4 @@
+import { t, useLocale } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent } from "react";
 
@@ -204,6 +205,7 @@ export function PaneSeparator({
   label: string;
   pane: ReturnType<typeof usePaneResize>;
 }) {
+  useLocale();
   const { axis, size, lower, upper, ...events } = pane.separator;
   return (
     <div
@@ -216,7 +218,10 @@ export function PaneSeparator({
       aria-valuemin={Math.round(lower)}
       aria-valuemax={Math.round(upper)}
       aria-valuenow={Math.round(size)}
-      title={`${label}. Потяните разделитель или используйте стрелки. Двойной щелчок — сброс размера.`}
+      title={t(
+        "{0}. Потяните разделитель или используйте стрелки. Двойной щелчок — сброс размера.",
+        [label],
+      )}
     />
   );
 }

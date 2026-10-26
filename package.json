@@ -1,30 +1,37 @@
 {
-  "name": "chls",
-  "version": "0.8.5",
-  "description": "Desktop HTTP and WireGuard debugging proxy",
+  "name": "mitm-gui",
+  "version": "0.9.0",
+  "description": "A desktop mitmproxy GUI for HTTP(S), WireGuard, rewrite rules and Python scripts",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "build": "tsc --noEmit && vite build",
-    "build:engine": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-engine.ps1",
-    "package": "npm run build && npm run build:engine && electron-builder --win portable",
-    "test": ".venv\\Scripts\\python.exe -m pytest tests -q",
-    "test:format": "node --experimental-strip-types --test tests/format-body.test.mts"
+    "build:engine": "node scripts/build-engine.cjs",
+    "package": "npm run build && npm run build:engine && electron-builder --win portable --publish never",
+    "test": "node scripts/test-backend.cjs",
+    "test:format": "node --experimental-strip-types --test tests/format-body.test.mts",
+    "setup": "node scripts/setup.cjs",
+    "package:mac": "npm run build && npm run build:engine && electron-builder --mac --publish never",
+    "test:ui": "node --test tests/script-library.test.cjs tests/i18n.test.mjs",
+    "test:smoke": "node scripts/smoke-ui.cjs --packaged",
+    "test:language": "node scripts/smoke-language.cjs"
   },
   "keywords": [],
-  "author": "CHLS",
+  "author": "SPomodor",
   "license": "ISC",
   "type": "commonjs",
   "build": {
-    "appId": "dev.chls.desktop",
-    "productName": "CHLS",
+    "appId": "dev.spomodor.mitm-gui",
+    "productName": "mitm gui",
     "directories": {
       "output": "release"
     },
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "package.json"
+      "package.json",
+      "LICENSE",
+      "NOTICE"
     ],
     "extraResources": [
       {
@@ -32,7 +39,7 @@
         "to": "examples"
       },
       {
-        "from": "runtime/chls-engine",
+        "from": "runtime/mitm-gui-engine",
         "to": "backend"
       }
     ],
@@ -43,7 +50,16 @@
       "signAndEditExecutable": false
     },
     "portable": {
-      "artifactName": "CHLS-${version}.exe"
+      "artifactName": "mitm-gui-${version}-win-x64.exe"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools",
+      "identity": null,
+      "artifactName": "mitm-gui-${version}-mac-${arch}.${ext}"
     }
   },
   "dependencies": {
@@ -77,5 +93,16 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "wait-on": "^9.5.1"
+  },
+  "homepage": "https://github.com/SPomodor/mitm-gui",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SPomodor/mitm-gui.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SPomodor/mitm-gui/issues"
+  },
+  "engines": {
+    "node": ">=24 <25"
   }
 }

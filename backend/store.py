@@ -34,7 +34,7 @@ class Store:
     def new_session(self):
         item = {'id': uuid.uuid4().hex, 'name': time.strftime('Session · %d %b %H:%M:%S'), 'created': time.time(), 'archived': False}
         with self.db:
-            # Includes sessions left active by a crash or an older CHLS build.
+            # Includes sessions left active by a crash or an older mitm gui build.
             self.db.execute('UPDATE sessions SET archived=1 WHERE archived=0')
             self.db.execute('INSERT INTO sessions (id,name,created,archived) VALUES (:id,:name,:created,:archived)', item)
         self.session = item['id']

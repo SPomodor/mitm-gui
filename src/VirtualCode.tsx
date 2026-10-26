@@ -1,3 +1,4 @@
+import { t, useLocale } from "./i18n";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
@@ -75,6 +76,7 @@ export default memo(function VirtualCode({
   queryLength?: number;
   active?: number;
 }) {
+  useLocale();
   const parent = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(120);
   useEffect(() => {
@@ -140,7 +142,7 @@ export default memo(function VirtualCode({
     <div
       ref={parent}
       className={`code-view virtual-code ${queryLength ? "searched-code" : ""}`}
-      aria-label="Содержимое тела"
+      aria-label={t("Содержимое тела")}
       tabIndex={0}
       data-total-rows={rows.length}
     >
@@ -164,7 +166,7 @@ export default memo(function VirtualCode({
                   className="line-number"
                   title={
                     row.continuation
-                      ? `Продолжение строки ${row.line}`
+                      ? t("Продолжение строки {0}", [row.line])
                       : undefined
                   }
                 >
@@ -182,7 +184,7 @@ export default memo(function VirtualCode({
           })}
         </div>
       ) : (
-        <span className="muted padded">Пустое тело</span>
+        <span className="muted padded">{t("Пустое тело")}</span>
       )}
     </div>
   );

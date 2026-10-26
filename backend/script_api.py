@@ -1,4 +1,4 @@
-"""The public `chls` module installed inside script worker processes."""
+"""The public `mitm_gui` module (`chls` compatibility alias) installed inside script worker processes."""
 import copy
 import json as _json
 from dataclasses import dataclass
@@ -183,5 +183,5 @@ class Context:
 
 
 def forward():
-    """Explicitly continue to ordinary CHLS rules and the upstream server."""
+    """Explicitly continue to ordinary mitm gui rules and the upstream server."""
     return None

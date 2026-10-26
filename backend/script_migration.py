@@ -9,7 +9,7 @@ def migrate_policy(source, hosts, scope, strict):
     hosts = validate_scope(hosts, scope)
     if not isinstance(strict, bool):
         raise ValueError('Сохранённая настройка strict должна быть true/false')
-    return source.rstrip() + '\n\n# Область перенесена из настроек CHLS. Теперь её можно изменить здесь.\n' + (
+    return source.rstrip() + '\n\n# Область перенесена из настроек mitm gui. Теперь её можно изменить здесь.\n' + (
         f'if app.hosts == []:\n    app.hosts = {hosts!r}\n'
         f'app.path_prefix = {scope!r}\n'
         f'app.unmatched = {"block" if strict else "forward"!r}\n')

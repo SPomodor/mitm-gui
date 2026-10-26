@@ -1,87 +1,86 @@
-# Архитектура CHLS v0.2
+# Architecture
 
-## Границы процессов
+[README](README.md) · [Build and release](CONTRIBUTING.md) · [Python API](SCRIPTS.md)
 
-`src/PaneResize.tsx` — общий механизм размеров рабочих панелей. Он измеряет контейнер ResizeObserver, ограничивает обе области минимальными размерами, обрабатывает pointer capture и клавиатуру. Обновления при перетаскивании группируются requestAnimationFrame; localStorage записывается при завершении жеста или клавиатурном действии. Sidebar и вертикальный разделитель сессий/хостов сохраняют пиксели, Traffic и Scenarios — пропорцию. При сужении окна размер ограничивается без потери сохранённого предпочтения. Отмена, потеря pointer capture, blur и размонтирование снимают режим перетаскивания. На backend настройки расположения не передаются.
+## Processes
 
 ```text
-React renderer (sandbox, no Node)
+React renderer (sandboxed, no Node)
     ↕ narrow contextBridge API
-Electron main process
-    ├── native file dialogs, saving files, lifecycle
-    ├── authenticated HTTP / WebSocket → 127.0.0.1:<random port>
-    └── owns Python child process
-           ├── FastAPI: management API, history, profiles
-           ├── mitmproxy DumpMaster + CaptureAddon
-           │      ├── HTTP proxy :8080 TCP
-           │      └── WireGuard :51820 UDP
-           └── SQLite + body files + CA + persistent rules
+Electron main
+    ├── native file dialogs, library/preferences, window lifecycle
+    ├── authenticated HTTP/WebSocket → 127.0.0.1:<random port>
+    └── Python backend child
+           ├── FastAPI management API
+           ├── mitmproxy DumpMaster + capture addons
+           │      ├── HTTP proxy TCP listener
+           │      └── WireGuard UDP listener
+           ├── SQLite + body files + CA + WireGuard profile
+           └── disposable Python process per applied script revision
 ```
 
-Один Python-процесс и один asyncio loop позволяют применять правила непосредственно к mitmproxy Flow. GUI передаёт команды, но не участвует в обработке каждого запроса. Python API слушает только loopback; отдельные порты захвата могут слушать LAN. У API нет CORS-доступа из браузера. Случайный токен создаётся на каждый запуск и остаётся в main-процессе; renderer получает только ограниченный IPC bridge.
+Electron owns the backend lifecycle. A random per-launch token stays in the main process; the renderer calls an allowlisted IPC API. Backend management only listens on loopback. Capture listeners may allow LAN access independently. The renderer does not process each proxied network message.
 
-Electron проверяет отправителя IPC, разрешает фиксированные API-маршруты, запрещает навигацию и новые окна. Перехваченные данные выводятся как текст React, не как исполняемый HTML. Файлы выбираются и сохраняются через native dialogs.
+IPC senders and frames are checked. External navigation and new windows are denied. Captured content is rendered as text, not executed HTML. Rule editors are separate sandboxed BrowserWindows, registered by rule ID and sharing the same backend.
 
-Редакторы правил — независимые немодальные BrowserWindow с теми же ограничениями sandbox/context isolation. Реестр main-процесса связывает окно с ID правила; данные черновика передаются отдельным IPC, без URL-параметров. Повторное открытие ID фокусирует существующее окно. Renderer с `#rule-editor` запускает только редактор и получает события правил; новый движок и сессия не создаются. `POST /rules/save` атомарно обновляет одно правило относительно актуального списка, сохраняя порядок и изменения из других редакторов. Закрытие главного окна закрывает редакторы и завершает движок.
+## Source map
 
-## Захват и правила
+| File | Responsibility |
+| --- | --- |
+| `electron/main.cjs` | Backend startup, IPC, events, dialogs, windows, preferences |
+| `electron/preload.cjs` | Restricted renderer bridge |
+| `electron/script-library.cjs` | Atomic text-only library persistence |
+| `src/App.tsx` | Shell, traffic, inspector, rules, connection setup |
+| `src/Mocks.tsx` | Script library/editor controls, live state and logs |
+| `src/ScriptEditor.tsx` | Lazy-loaded CodeMirror Python editor/search |
+| `src/RewriteFields.tsx` | Rewrite action forms |
+| `src/PaneResize.tsx` | Pointer/keyboard resizing and persisted layout |
+| `src/VirtualCode.tsx`, `src/SearchBody.tsx` | Bounded body rendering and search |
+| `src/i18n.ts`, `electron/locales/en.json` | Live shared language preference/catalog |
+| `backend/__main__.py` | FastAPI API, mitmproxy capture lifecycle/hooks |
+| `backend/store.py` | Sessions, SQLite records and body files |
+| `backend/rules.py`, `backend/rewrite.py` | Validated rule matching and transformations |
+| `backend/ssl_policy.py`, `backend/tunnels.py` | TLS routing and opaque connection observation |
+| `backend/records.py`, `backend/har.py`, `backend/charles_har.py` | Record normalization and HAR export |
+| `backend/scripts.py` | Worker supervision, revisions, scope and atomic execution |
+| `backend/script_worker.py` | Python compilation, fixture snapshots, handler dispatch |
+| `backend/script_api.py`, `backend/json_fields.py` | Script API and shared JSON selectors |
+| `backend/script_migration.py`, `backend/mocks.py` | One-way legacy document migration |
 
-Запись отделена от слушателей: `POST /recording` меняет флаг для новых HTTP-потоков, а правила и сценарии исполняются всегда. На requestheaders фиксируются сессия, флаг записи и поколение сессии. Очистка или удаление повышает поколение и убирает отложенные события: поздний response не восстанавливает удалённую запись и файлы. Уже начатые записываемые запросы завершаются после паузы; запросы, начатые на паузе, не сохраняются. При запуске запись включена.
+## Capture and persistence
 
-`POST /capture/ssl` сохраняет режим для новых соединений. В 0.6.0 `OpaqueNextLayer` расширяет штатный NextLayer addon: выбирает TCP/UDP relay до создания TLS-слоёв и делегирует остальные протоколы штатному выбору. Удаления `context.layers` больше нет. `TunnelCapture` только наблюдает сообщения, считает байты и пассивно извлекает SNI с буфером до 64 KiB/128 фрагментов. Неполный ClientHello не задерживает передачу и не теряет запись соединения. Режим зафиксирован выбранным relay; уже открытые соединения не переключаются.
+Recording is independent of listeners and rules. At request start, the engine captures the recording decision, session and session generation. Clear/delete advances the generation; late responses cannot recreate deleted history. Existing recorded requests can finish after recording is paused.
 
-С 0.7.0 `ssl_policy.py` нормализует до 200 доменов/IP с необязательным портом; `should_decrypt` учитывает master-флаг, scope all/selected, адрес CONNECT/назначения и SNI. В выбранном режиме, если назначения недостаточно, OpaqueNextLayer ждёт ClientHello в пределах 64 KiB/128 событий перед выбором маршрута. Неопределённые оборванные handshakes учитываются отдельно и завершаются диагностической записью. Положительное решение фиксируется до native TLS hook; смена настроек не переключает уже выбранный relay. POST /capture/ssl атомарно сохраняет валидированный config; частичный toggle сохраняет область и хосты. Для выбранного подключения сертификат CHLS по-прежнему должен быть доверенным, путь HTTP до расшифровки неизвестен.
+Sessions archive on normal close or when superseded. Startup archives leftovers after a crash and creates a fresh recording session. The GUI can browse an archive while the engine records into the current session. Export is a consistent snapshot independent of display filters.
 
-Модель истории имеет `kind: http | connection`. У соединения есть protocol/endpoint/transport/bytes_sent/bytes_received и open/closed/error, но нет HTTP method/url/path/status/message. `records.py` содержит общий lifecycle записи/поколения сессии и преобразование legacy encrypted записей при чтении, без миграции содержимого базы. Обновления всех соединений объединяются одной транзакцией SQLite раз в 250 мс. Перед чтением истории/деталей/экспортом и завершением накопленные данные сохраняются; generation и существование сессии проверяются перед batch. Продолжительность считается монотонными часами.
+HTTP and encrypted connections have separate record shapes. Opaque TLS/DTLS/QUIC records never pretend to contain HTTP methods, paths or bodies. Standard HAR emits HTTP only; the optional Charles mode creates explicit synthetic CONNECT summaries.
 
-Обычный `export_har` исключает соединения. `?format=charles` явно включает адаптер `charles_har.py` с условными CONNECT/CONNECT-UDP и комментариями о несовпадении с наблюдаемыми HTTP-данными. `_chlsTunnels` удалён; одна запись и один блок `_chls` на соединение. Режим выбирается в UI перед нативным сохранением, проверяется в IPC и API. QUIC/DTLS отмечены экспериментальными; реальный QUIC handshake/stream и частичный DTLS-пакет проверяются через reverse UDP listener mitmproxy, физический WireGuard и полный DTLS пока отдельно.
+## SSL routing
 
-Условия новых правил содержат отдельный `query`; пустая строка означает любые параметры. `null` сохраняет прежнюю семантику полного path+query для старых документов. Regex проверяется отдельно для обоих полей. Редактор и API умеют разделять полный URL; legacy regex не переписываются.
+SSL scope combines a master toggle with all/selected hosts, ports, wildcards, CONNECT destination and SNI. Opaque routing chooses a relay before native TLS interception. When needed, ClientHello inspection is bounded to 64 KiB/128 events. Observation does not decrypt or delay application content indefinitely.
 
-`backend/rules.py` содержит типизированную модель, валидацию и порядок исполнения. `backend/rewrite.py` реализует поиск/замену заголовков, query, URL/Host/Path, статуса и body. Расширенные настройки хранятся в nullable-поле `rewrite`; отсутствие поля сохраняет прежнюю семантику старых Header/Body/URL/JSON. Regex проверяется при сохранении, подстановки `$1` и `${name}` выполняются через match callback без интерпретации буквальных обратных слешей.
+A connection keeps its chosen mode. Settings changes only affect new connections. HTTP paths cannot participate in pre-decryption routing.
 
-На стадии запроса снимается оригинал, фиксируются исходные host/path/method и версия правил. Условия каждого правила проверяются по исходному расположению, поэтому перенаправление не отменяет следующие правила цепочки. Request Rewrite выполняется в порядке списка; Blocklist и Map Local завершают эту стадию. При ответе сохраняется оригинал и выполняются response/both Rewrite из той же версии правил. Срабатывания, число совпадений, отсутствие совпадений и ошибки записываются в metadata и историю. Summary сохраняет исходное расположение для создания новых правил из уже изменённых запросов.
+## Rules and scripts
 
-Изменение тела использует API mitmproxy, которое обновляет кодирование и Content-Length. ETag и Content-MD5 удаляются после изменения тела. Пустое/потоковое тело не выдается за захваченное содержимое.
+Rules use immutable validated revisions. Original request location is captured before mutations. Request handlers/rules operate before upstream forwarding; local Map Local/Blocklist/script responses terminate ordinary request processing. For forwarded replies, normal response Rewrite precedes script response callbacks. Script-local replies skip normal response Rewrite.
 
-Host меняет реальное назначение и HTTP Host/:authority; Path сохраняет query. Изменения query и заголовков работают с упорядоченными списками пар, сохраняя дубликаты. Неверная замена заголовков/статуса отклоняется до мутации. После правил ответы 204/304 нормализуются до пустого тела, без Transfer-Encoding и Content-Length.
+A script revision owns a spawned Python worker and immutable fixture snapshot. Parent-owned managed contexts are keyed per request. Worker transactions return candidate messages and JSON state; the parent validates them before committing. Errors preserve the previous managed state/message. Python side effects outside those managed values are not transactional.
 
-## Хранение и события
+Workers have startup/handler timeouts and a parent-death watcher. Stop is committed only on successful execution and disables the revision globally. Pending requests check stop under the execution lock. Reapplying creates a new revision; old in-flight responses do not run the new revision's callbacks.
 
-Сессии имеют флаг `archived`: SQLite-миграция добавляет поле без удаления истории. `Store.new_session` одной транзакцией архивирует предыдущие сессии и создаёт новую активную; это также восстанавливает состояние после аварийного завершения. Перед завершением Electron вызывает `POST /sessions/close`, который сохраняет архивный флаг до остановки/завершения движка; shutdown lifespan делает это повторно для других способов остановки. В sidebar активная сессия и сворачиваемый архив используют общие действия просмотра/переименования/экспорта/удаления. Выбор архивной сессии меняет только просматриваемую историю, а не `Store.session`, в которую идёт запись.
+The library is independent from the engine. Saving text never compiles or activates it. Applying compiles, installs and saves; selecting a library item does not alter active capture behavior.
 
-`DELETE /sessions/{id}` удаляет старую сессию и её трафик вместе с телами под блокировкой экспорта. Сессия записи защищена: сначала нужно создать новую. Renderer после удаления выбранной сессии возвращается к текущей. Очистка подтверждается React-диалогом, поскольку браузерный confirm не поддерживается Electron.
+## UI state and language
 
-Фокус по точным именам хостов хранится в localStorage и фильтрует только отображение. `SearchBody` реализует локальный поиск в активном теле с подсветкой, счётчиком и навигацией; число подсвеченных совпадений ограничено 10 000. Искомый текст не интерпретируется как HTML или regex.
+Zustand holds live status, sessions, flows and rules; backend events refresh or merge bounded lists. Per-editor drafts remain local. CodeMirror and large bodies are virtualized, and script editor loading is deferred until first use.
 
-`VirtualCode` использует существующий TanStack Virtual для тела запроса/ответа. Полный текст разбивается на строки и ограниченные по ширине фрагменты; в DOM попадает лишь окно видимых фрагментов. Подсветка токенизирует максимум 512 символов за раз, включая случай незаконченного JSON в обрезанном превью. Результат Pretty кешируется по исходному тексту, Inspector и просмотр тела мемоизированы. Поиск вычисляет позиции по всему превью, двоичным поиском находит нужный фрагмент и прокручивает его в окно; подсвечиваются только видимые части совпадений. Копирование и сохранение не используют виртуальный DOM и сохраняют прежнюю семантику.
+Language comes from an Electron-owned persisted preference and OS locale. The renderer receives its initial locale before rendering, subscribes to preference changes and updates all open windows. Only UI-owned messages are localized; request bodies, source and user names remain data.
 
-`formatBody` сначала использует стандартный Pretty; при ошибке разбора обрезанного JSON-превью применяет линейный проход с учётом кавычек и экранирования. Он добавляет лишь форматирование доступного префикса, не достраивает структуру и не изменяет исходные данные. Глубина отступов и размер результата ограничены; другие повреждённые или не-JSON тела сохраняют исходное отображение. Тесты форматирования запускаются через `npm run test:format`.
+## Compatibility boundaries
 
-`backend/store.py`: таблицы sessions и flows. Flow summary используется для списка; detail содержит headers, ссылки на сохранённые оригиналы и итоговые тела. Тела ограничены политикой streaming. В памяти frontend держит последние 10 000 summary; текст загружается по выбору запроса.
+The public name is **mitm gui**, by SPomodor. CHLS is the former name. Existing profiles are reused when found. `window.chls`, `CHLS_*` launcher/test variables, local-storage keys and HAR `_chls` fields remain stable internal compatibility formats. `mitm_gui` is the recommended public Python module, with `chls` retained as an alias.
 
-Названия сессий обновляются через `PUT /sessions/{id}`. Экспорт `GET /sessions/{id}/export` фиксирует метаданные всей сессии без ограничения списка, затем `backend/har.py` пишет HAR во временный файл в рабочем потоке, по одному запросу за раз. Имена новых файлов тел включают SHA-256: последующие события захвата не перезаписывают содержимое снимка. Очистка сессии ожидает завершения формирования экспорта. Electron передаёт результат потоком в выбранный пользователем файл через временный `.partial`; итоговое имя появляется после успешного сохранения. Исходные сообщения и журнал правил сохраняются в расширении HAR `_chls`; ключи WireGuard и настройки CA в экспорт не входят.
+## Distribution
 
-Изменения flow объединяются по ID и отправляются пакетами раз в 120 мс. Очередь каждого потребителя ограничена; при переполнении отправляется resync. Electron пересылает события в renderer. После переподключения WebSocket история перечитывается. Таблица виртуализирована.
-
-SQLite и запись небольших тел в этой версии синхронные. При росте нагрузки следующий шаг — ограниченная очередь записи и отдельный writer без доступа к изменяемым Flow. Для больших долгих захватов также нужна ротация файлов и истории.
-
-## Мок-сценарии
-
-`backend/mocks.py` содержит независимый парсер декларативного языка и единственный MockModule. Документ хранится в `mock-module.json`; активация и текущий этап не восстанавливаются после запуска. Проверка `/mocks/validate` и применение `PUT /mocks` компилируют весь документ и читают JSON в рабочем потоке. Установка происходит только после успешной проверки и сохранения; снимок файлов неизменяем до следующего применения. Ограничения: 200 000 символов, 50 этапов, 1000 ответов, 8 MB на JSON и 64 MB на уникальные файлы.
-
-CaptureAddon сначала проверяет активный мок по исходному домену/методу/пути. Совпавший ответ или блокировка 501 завершают обработку правил; response Rewrite также пропускается. Необработанный запрос вне строгого префикса идёт по прежнему пути. Выбор этапа заменяет текущий набор синхронно на loop; polling не изменяет состояние. Метаданные ответа фиксируются в flow, ограниченном журнале на 200 записей и событиях `mocks`. UI `src/Mocks.tsx` сохраняет черновик при переключении разделов и показывает состояние модуля глобально. Основные API и файлы прежних правил не изменяются.
-
-С v0.4 парсер разрешает `при [МЕТОД] путь -> следующий|"этап"` внутри этапа, проверяя ссылки и неоднозначные дубликаты. Триггеры компилируются в отдельную таблицу; режим free/scenario сохраняется независимо от текста сценария через control API. С v0.4.1 активный триггер в режиме scenario имеет приоритет над ответами этапа/общими: локальный 200 с пустым телом и переход на целевой этап, независимо от заданного кода/тела. Свободный режим сохраняет явно заданный ответ и этап; ручной stage API запрещён в режиме scenario. Известная ручка без явно заданного ответа получает локальный пустой 200. Ограниченный TTL-кеш на 2000 отпечатков подавляет короткие повторы, разделяя клиентов и домены: 2 секунды по телу или 30 секунд по ID запроса. В metadata/history сохраняются исходный этап, выполненный переход либо причина пропуска. Старые документы по умолчанию работают в free.
-
-## WireGuard
-
-Встроенный WireGuard-сервер mitmproxy генерирует и хранит ключи. Приложение получает client_conf у запущенного слушателя и подставляет выбранный IPv4/hostname в Endpoint. QR создаётся локально. Полный профиль не выводится в логи и `/status`.
-
-Версия 0.1 поддерживает один профиль/одно активное устройство. Независимые профили, удаление/ротация peer и измерение handshake отложены. UI показывает состояние слушателя и факт наблюдаемого HTTP-трафика, не имитирует подтверждение VPN-handshake.
-
-## Сборка и расширение
-
-Python упаковывается PyInstaller с ресурсами mitmproxy и Rust-модулями. Electron Builder включает готовый движок как extraResource, пользователь не зависит от установленного Python. Версия mitmproxy закреплена: использование DumpMaster и WireGuardServerInstance требует регрессионных тестов при обновлении.
-
-Для macOS потребуются отдельная сборка backend на macOS, подпись/notarization и проверка сетевого доступа. Текущий frontend и bridge переносимы; Windows-specific команды остаются в build scripts. Local Capture и автоматическая настройка системного прокси добавляются отдельными платформенными модулями.
+Node scripts bootstrap a local Python environment, compile the frontend, freeze the backend with PyInstaller and package it with electron-builder. Windows CI runs both source and frozen-backend tests plus packaged GUI smoke tests. Tags matching the package version publish release assets after those checks pass. macOS paths/build configuration exist for porting but are not verified by Windows CI.

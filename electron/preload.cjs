@@ -1,5 +1,12 @@
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("chls", {
+  language: ipcRenderer.sendSync("get-language"),
+  setLanguage: (preference) => ipcRenderer.invoke("set-language", preference),
+  onLanguage: (callback) => {
+    const listener = (_, preference) => callback(preference);
+    ipcRenderer.on("language-changed", listener);
+    return () => ipcRenderer.removeListener("language-changed", listener);
+  },
   openRuleEditor: (rule) => ipcRenderer.invoke("open-rule-editor", rule),
   ruleEditorData: () => ipcRenderer.invoke("rule-editor-data"),
   closeRuleEditor: () => ipcRenderer.invoke("close-rule-editor"),

@@ -1,3 +1,4 @@
+import { t, useLocale } from "./i18n";
 import type { Rule, RewriteOptions } from "./types";
 
 export const requestActions = new Set<Rule["action"]>([
@@ -56,6 +57,7 @@ export default function RewriteFields({
   draft: Rule;
   onChange: (updates: Partial<Rule>) => void;
 }) {
+  useLocale();
   const opts = draft.rewrite || rewriteDefaults(draft.action);
   const patch = (update: Partial<RewriteOptions>) =>
     onChange({ rewrite: { ...opts, ...update } });
@@ -82,14 +84,14 @@ export default function RewriteFields({
   return (
     <>
       <label>
-        Что изменить
+        {t("Что изменить")}
         <select
           value={draft.action}
           onChange={(e) => changeAction(e.target.value as Rule["action"])}
         >
           {actions.map(([value, label]) => (
             <option key={value} value={value}>
-              {label}
+              {t(label)}
             </option>
           ))}
         </select>
@@ -98,24 +100,24 @@ export default function RewriteFields({
         <>
           <label>
             {draft.action === "json"
-              ? "Имя поля или точный путь JSON"
-              : "Имя заголовка"}
+              ? t("Имя поля или точный путь JSON")
+              : t("Имя заголовка")}
             <input
               required
               value={draft.key}
               onChange={(e) => onChange({ key: e.target.value })}
               placeholder={
                 draft.action === "json"
-                  ? "time или order.start.time"
+                  ? t("time или order.start.time")
                   : "X-Debug"
               }
             />
           </label>
           {draft.action === "json" && (
             <p className="field-hint">
-              Короткое имя ищется во всём JSON, включая массивы. Если совпадений
-              несколько, правило покажет ошибку с точными путями. Для ключей с
-              точками используйте JSON Pointer: /order/start/time.
+              {t(
+                "Короткое имя ищется во всём JSON, включая массивы. Если совпадений несколько, правило покажет ошибку с точными путями. Для ключей с точками используйте JSON Pointer: /order/start/time.",
+              )}
             </p>
           )}
           <label className="checkbox-label">
@@ -124,20 +126,21 @@ export default function RewriteFields({
               checked={draft.remove}
               onChange={(e) => onChange({ remove: e.target.checked })}
             />
-            Удалить {draft.action === "json" ? "поле" : "заголовок"}
+            {t("Удалить ")}
+            {draft.action === "json" ? t("поле") : t("заголовок")}
           </label>
           {!draft.remove && (
             <label>
               {draft.action === "json"
-                ? "Новое значение JSON"
-                : "Новое значение"}
+                ? t("Новое значение JSON")
+                : t("Новое значение")}
               <textarea
                 rows={3}
                 value={draft.value}
                 onChange={(e) => onChange({ value: e.target.value })}
                 placeholder={
                   draft.action === "json"
-                    ? 'true, 42, "текст" или {"key": "value"}'
+                    ? t('true, 42, "текст" или {"key": "value"}')
                     : ""
                 }
               />
@@ -145,8 +148,9 @@ export default function RewriteFields({
           )}
           {draft.action === "header" && (
             <p className="field-hint">
-              Устанавливает значение, даже если заголовка ещё нет. Для поиска по
-              значению или переименования выберите Modify Header.
+              {t(
+                "Устанавливает значение, даже если заголовка ещё нет. Для поиска по значению или переименования выберите Modify Header.",
+              )}
             </p>
           )}
         </>
@@ -154,29 +158,29 @@ export default function RewriteFields({
         <>
           {!add && (
             <section className="rewrite-section">
-              <h3>Поиск</h3>
+              <h3>{t("Поиск")}</h3>
               {fields && (
                 <label>
-                  Имя для поиска
+                  {t("Имя для поиска")}
                   <input
                     value={opts.search_name}
                     onChange={(e) => patch({ search_name: e.target.value })}
                     placeholder={
                       draft.action.startsWith("header_")
-                        ? "Content-Type или X-(.*)"
-                        : "Имя query-параметра"
+                        ? t("Content-Type или X-(.*)")
+                        : t("Имя query-параметра")
                     }
                   />
                 </label>
               )}
               <label>
-                Значение для поиска
+                {t("Значение для поиска")}
                 {body ? (
                   <textarea
                     rows={3}
                     value={opts.search_value}
                     onChange={(e) => patch({ search_value: e.target.value })}
-                    placeholder="Текст или регулярное выражение"
+                    placeholder={t("Текст или регулярное выражение")}
                   />
                 ) : (
                   <input
@@ -185,7 +189,7 @@ export default function RewriteFields({
                     placeholder={
                       draft.action === "status"
                         ? "200"
-                        : "Пусто — любое значение"
+                        : t("Пусто — любое значение")
                     }
                   />
                 )}
@@ -205,7 +209,7 @@ export default function RewriteFields({
                     checked={opts.whole_value}
                     onChange={(e) => patch({ whole_value: e.target.checked })}
                   />
-                  Значение целиком
+                  {t("Значение целиком")}
                 </label>
                 <label className="checkbox-label">
                   <input
@@ -215,21 +219,21 @@ export default function RewriteFields({
                       patch({ case_sensitive: e.target.checked })
                     }
                   />
-                  Учитывать регистр
+                  {t("Учитывать регистр")}
                 </label>
               </div>
               <p className="field-hint">
-                Пустые поля поиска соответствуют любому значению.
-                {fields ? " Имя сравнивается без учёта регистра." : ""}
+                {t("Пустые поля поиска соответствуют любому значению.")}
+                {fields ? t(" Имя сравнивается без учёта регистра.") : ""}
               </p>
             </section>
           )}
           {!remove && (
             <section className="rewrite-section">
-              <h3>{add ? "Добавить" : "Замена"}</h3>
+              <h3>{add ? t("Добавить") : t("Замена")}</h3>
               {fields && (
                 <label>
-                  Новое имя
+                  {t("Новое имя")}
                   <input
                     required={add}
                     value={opts.replacement_name}
@@ -238,14 +242,14 @@ export default function RewriteFields({
                     }
                     placeholder={
                       add
-                        ? "Имя заголовка или параметра"
-                        : "Пусто — оставить прежнее имя"
+                        ? t("Имя заголовка или параметра")
+                        : t("Пусто — оставить прежнее имя")
                     }
                   />
                 </label>
               )}
               <label>
-                Новое значение
+                {t("Новое значение")}
                 {body ? (
                   <textarea
                     rows={4}
@@ -254,7 +258,7 @@ export default function RewriteFields({
                     onChange={(e) =>
                       patch({ replacement_value: e.target.value || null })
                     }
-                    placeholder="Пусто — оставить прежнее значение"
+                    placeholder={t("Пусто — оставить прежнее значение")}
                   />
                 ) : (
                   <input
@@ -267,8 +271,8 @@ export default function RewriteFields({
                       draft.action === "status"
                         ? "404"
                         : add
-                          ? "Значение (может быть пустым)"
-                          : "Пусто — оставить прежнее значение"
+                          ? t("Значение (может быть пустым)")
+                          : t("Пусто — оставить прежнее значение")
                     }
                   />
                 )}
@@ -282,21 +286,21 @@ export default function RewriteFields({
                       patch({ replacement_value: e.target.checked ? "" : null })
                     }
                   />
-                  Заменить значение пустой строкой
+                  {t("Заменить значение пустой строкой")}
                 </label>
               )}
               {opts.regex && (
                 <p className="field-hint">
-                  {
-                    "Группы соответствующего поля: $1, $2, ${name}. $$ — символ $. Regex использует синтаксис Python."
-                  }
+                  {t(
+                    "Группы соответствующего поля: $1, $2, ${name}. $$ — символ $. Regex использует синтаксис Python.",
+                  )}
                 </p>
               )}
             </section>
           )}
           {!add && (
             <fieldset className="rewrite-occurrences">
-              <legend>{remove ? "Удалить" : "Заменить"}</legend>
+              <legend>{remove ? t("Удалить") : t("Заменить")}</legend>
               <label className="checkbox-label">
                 <input
                   type="radio"
@@ -304,7 +308,7 @@ export default function RewriteFields({
                   checked={!opts.replace_all}
                   onChange={() => patch({ replace_all: false })}
                 />
-                Первое совпадение
+                {t("Первое совпадение")}
               </label>
               <label className="checkbox-label">
                 <input
@@ -313,39 +317,45 @@ export default function RewriteFields({
                   checked={opts.replace_all}
                   onChange={() => patch({ replace_all: true })}
                 />
-                Все совпадения
+                {t("Все совпадения")}
               </label>
             </fieldset>
           )}
           {draft.action === "path" && (
             <p className="field-hint">
-              Меняется только путь без query. Query-параметры сохраняются.
+              {t(
+                "Меняется только путь без query. Query-параметры сохраняются.",
+              )}
             </p>
           )}
           {draft.action === "host" && (
             <p className="field-hint">
-              Меняет сервер назначения и Host / :authority. Указывайте домен или
-              IP без схемы, порта и пути.
+              {t(
+                "Меняет сервер назначения и Host / :authority. Указывайте домен или IP без схемы, порта и пути.",
+              )}
             </p>
           )}
           {draft.action === "url" && (
             <p className="field-hint">
-              Результат должен быть полным URL с http:// или https://. Пустой
-              поиск заменяет URL целиком.
+              {t(
+                "Результат должен быть полным URL с http:// или https://. Пустой поиск заменяет URL целиком.",
+              )}
             </p>
           )}
           {draft.action === "status" && (
             <p className="field-hint">
-              Например: найти 200 → заменить на 404. Результат — HTTP-статус от
-              100 до 599.
+              {t(
+                "Например: найти 200 → заменить на 404. Результат — HTTP-статус от 100 до 599.",
+              )}
             </p>
           )}
         </>
       )}
       {["json", "body"].includes(draft.action) && (
         <p className="field-hint">
-          Буферизованные тела до 8 MB. Ошибки и отсутствие совпадений видны в
-          инспекторе запроса.
+          {t(
+            "Буферизованные тела до 8 MB. Ошибки и отсутствие совпадений видны в инспекторе запроса.",
+          )}
         </p>
       )}
     </>

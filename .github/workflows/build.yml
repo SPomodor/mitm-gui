@@ -1,0 +1,119 @@
+name: Build and test
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: "1"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      CHLS_SMOKE_BUILD_DIR: release
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          cache: npm
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Install dependencies
+        run: npm run setup
+      - name: Check tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: node -e "if (process.env.GITHUB_REF_NAME !== 'v' + require('./package.json').version) throw Error('Tag must match package.json version')"
+      - name: Build frontend and check TypeScript
+        run: npm run build
+      - name: Test backend
+        run: npm test
+      - name: Test body formatting and translation catalog
+        run: |
+          npm run test:format
+          npm run test:ui
+      - name: Build standalone Python engine
+        run: npm run build:engine
+      - name: Test compiled engine
+        shell: pwsh
+        run: |
+          $env:CHLS_TEST_ENGINE = (Resolve-Path 'runtime/mitm-gui-engine/mitm-gui-engine.exe').Path
+          .venv/Scripts/python.exe -m pytest tests/test_integration.py -q
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package desktop app
+        run: npx electron-builder --win --dir --publish never
+      - name: Smoke test packaged app
+        run: node scripts/smoke-ui.cjs --packaged
+      - name: Smoke test language switching
+        run: npm run test:language
+      - name: Build portable EXE
+        run: npx electron-builder --win portable --prepackaged release/win-unpacked --publish never
+      - name: Write checksum
+        shell: pwsh
+        run: |
+          Get-ChildItem release/mitm-gui-*-win-x64.exe | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)" | Set-Content -Encoding utf8 "release/SHA256SUMS.txt"
+          }
+      - name: Upload application
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: mitm-gui-windows-x64
+          path: |
+            release/mitm-gui-*-win-x64.exe
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: windows-test-diagnostics
+          path: |
+            build/**/*.png
+            build/**/*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  release:
+    name: Publish tagged release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: mitm-gui-windows-x64
+          path: artifacts
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --title "mitm gui $TAG" --generate-notes
+          fi
+          gh release upload "$TAG" artifacts/* --clobber

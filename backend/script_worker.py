@@ -32,7 +32,8 @@ def run_worker(pipe, source, folder):
             os._exit(0)
         threading.Thread(target=watch_parent, daemon=True).start()
     try:
-        sys.modules['chls'] = api
+        sys.modules['mitm_gui'] = api
+        sys.modules['chls'] = api  # Existing user scripts remain compatible.
         tree = ast.parse(source.lstrip('\ufeff'), filename='script.py')
         namespace = {'__name__': '__chls_script__', '__file__': 'script.py'}
         exec(compile(tree, 'script.py', 'exec'), namespace)

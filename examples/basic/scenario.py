@@ -1,6 +1,6 @@
-from chls import Script, Scenario, response
+from mitm_gui import Script, Scenario, response
 
-# Откройте http://example.com/api/hello через прокси CHLS.
+# Откройте http://example.com/api/hello через прокси mitm gui.
 # HTTPS требует включённой расшифровки SSL для example.com.
 app = Script("Пример · example.com", hosts=["example.com"], path_prefix="/api/")
 demo = Scenario("demo", initial="Начало")
@@ -12,7 +12,7 @@ def hello(request, ctx):
     # Переменные сохраняются между запросами.
     ctx.state["visits"] = ctx.state.get("visits", 0) + 1
     return response(200, json={
-        "message": "Привет из CHLS!",
+        "message": "Привет из mitm gui!",
         "visits": ctx.state["visits"],
         "stage": ctx.stage,
     })

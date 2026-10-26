@@ -21,12 +21,12 @@ const net = require("node:net");
       ? {
           executablePath: path.resolve(
             process.env.CHLS_SMOKE_BUILD_DIR || "release",
-            "win-unpacked/CHLS.exe",
+            "win-unpacked/mitm gui.exe",
           ),
           args: [],
         }
       : { args: [path.resolve(".")] }),
-    env: { ...process.env, CHLS_USER_DATA: data },
+    env: { ...process.env, CHLS_SYSTEM_LOCALE: "ru-RU", CHLS_USER_DATA: data },
   });
   const page = await application.firstWindow();
   try {

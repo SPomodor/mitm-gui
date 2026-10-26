@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { create } from "zustand";
 import type { Flow, HttpFlow, Rule, Session, Status } from "./types";
 interface State {
@@ -93,10 +94,10 @@ export const newRule = (
   id: crypto.randomUUID(),
   name:
     kind === "rewrite"
-      ? "Новое Rewrite"
+      ? t("Новое Rewrite")
       : kind === "map_local"
-        ? "Локальный ответ"
-        : "Блокировка",
+        ? t("Локальный ответ")
+        : t("Блокировка"),
   enabled: true,
   kind,
   phase: kind === "rewrite" ? "response" : "request",

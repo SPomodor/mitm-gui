@@ -1,3 +1,4 @@
+import { t, localizeMessage, useLocale, getLocale } from "./i18n";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   Copy,
@@ -16,7 +17,8 @@ import {
 import { api } from "./store";
 import { PaneSeparator, usePaneResize } from "./PaneResize";
 import type { SavedScript, ScriptLibraryData } from "./types";
-import demo from "../examples/basic/scenario.py?raw";
+import demoRu from "../examples/basic/scenario.py?raw";
+import demoEn from "../examples/basic/scenario.en.py?raw";
 const ScriptEditor = lazy(() => import("./ScriptEditor"));
 
 interface MockDocument {
@@ -37,6 +39,7 @@ interface MockLog {
   transition?: { source: string; destination: string; line: number } | null;
   trigger_note?: string;
   messages?: string[];
+  stopped?: boolean;
   state_changes?: Record<string, unknown>;
   error?: string;
   phase?: string;
@@ -65,6 +68,8 @@ export default function Mocks({
   onEnabledChange: (enabled: boolean) => void;
   active?: boolean;
 }) {
+  useLocale();
+  const demo = getLocale() === "ru" ? demoRu : demoEn;
   const [editorStarted, setEditorStarted] = useState(active);
   useEffect(() => {
     if (active) setEditorStarted(true);
@@ -106,8 +111,8 @@ export default function Mocks({
           if (!collection.items.length) {
             collection = await window.chls.saveScript({
               name: value.source
-                ? value.name || "Мой сценарий"
-                : "Пример · example.com",
+                ? value.name || t("Мой сценарий")
+                : t("Пример · example.com"),
               source: value.source || demo,
               folder: value.folder,
             });
@@ -154,7 +159,7 @@ export default function Mocks({
       ...draft,
     });
     setLibrary(collection);
-    setNotice("Сохранено в библиотеке. Работающий скрипт не изменён.");
+    setNotice(t("Сохранено в библиотеке. Работающий скрипт не изменён."));
   }
   function transition(task: () => Promise<void>) {
     if (unsaved) setPending(() => task);
@@ -162,7 +167,7 @@ export default function Mocks({
   }
   async function createScript(
     source = demo,
-    title = "Новый сценарий",
+    title = t("Новый сценарий"),
     folder = "",
   ) {
     const collection = await window.chls.saveScript({
@@ -174,7 +179,9 @@ export default function Mocks({
     openItem(collection.items.find((item) => item.id === collection.selected)!);
     setQuery("");
     setNotice(
-      "Сценарий добавлен в библиотеку. Проверьте код и примените, когда будете готовы.",
+      t(
+        "Сценарий добавлен в библиотеку. Проверьте код и примените, когда будете готовы.",
+      ),
     );
   }
   useEffect(() => {
@@ -272,12 +279,15 @@ export default function Mocks({
             aria-labelledby="script-dialog-title"
           >
             <h2 id="script-dialog-title">
-              {deleteOpen ? "Удалить сценарий?" : "Сохранить изменения?"}
+              {deleteOpen ? t("Удалить сценарий?") : t("Сохранить изменения?")}
             </h2>
             <p>
               {deleteOpen
-                ? `«${name}» будет удалён из библиотеки. Работающий скрипт продолжит выполняться.`
-                : `В сценарии «${name}» есть несохранённые изменения.`}
+                ? t(
+                    "«{0}» будет удалён из библиотеки. Работающий скрипт продолжит выполняться.",
+                    [name],
+                  )
+                : t("В сценарии «{0}» есть несохранённые изменения.", [name])}
             </p>
             <div>
               <button
@@ -289,7 +299,7 @@ export default function Mocks({
                   setDeleteOpen(false);
                 }}
               >
-                Отмена
+                {t("Отмена")}
               </button>
               {deleteOpen ? (
                 <button
@@ -307,14 +317,16 @@ export default function Mocks({
                             (i) => i.id === collection.selected,
                           ) || collection.items[0],
                         );
-                      else await createScript(demo, "Пример · example.com");
+                      else await createScript(demo, t("Пример · example.com"));
                       setNotice(
-                        "Удалено из библиотеки. Работающий скрипт не изменён.",
+                        t(
+                          "Удалено из библиотеки. Работающий скрипт не изменён.",
+                        ),
                       );
                     })
                   }
                 >
-                  Удалить
+                  {t("Удалить")}
                 </button>
               ) : (
                 <>
@@ -329,7 +341,7 @@ export default function Mocks({
                       })
                     }
                   >
-                    Не сохранять
+                    {t("Не сохранять")}
                   </button>
                   <button
                     className="button primary"
@@ -343,7 +355,7 @@ export default function Mocks({
                       })
                     }
                   >
-                    Сохранить и продолжить
+                    {t("Сохранить и продолжить")}
                   </button>
                 </>
               )}
@@ -353,8 +365,10 @@ export default function Mocks({
       )}
       <div className="page-heading">
         <div>
-          <h1>Сценарии</h1>
-          <p>Python-скрипты · обработчики запросов, ответов и сценарии</p>
+          <h1>{t("Сценарии")}</h1>
+          <p>
+            {t("Python-скрипты · обработчики запросов, ответов и сценарии")}
+          </p>
         </div>
         <div className="heading-actions">
           <button
@@ -363,7 +377,7 @@ export default function Mocks({
             onClick={() => control("reset")}
           >
             <RotateCcw size={14} />
-            Сбросить состояние
+            {t("Сбросить состояние")}
           </button>
           <button
             className={`button ${status?.enabled ? "recording" : "primary"}`}
@@ -371,19 +385,19 @@ export default function Mocks({
             onClick={() => control(status?.enabled ? "disable" : "enable")}
           >
             {status?.enabled ? <Square size={12} /> : <Play size={13} />}{" "}
-            {status?.enabled ? "Выключить сценарий" : "Включить сценарий"}
+            {status?.enabled ? t("Выключить сценарий") : t("Включить сценарий")}
           </button>
         </div>
       </div>
       <div className="mock-stages">
         <div className="mock-state">
           <span className={`status-dot ${status?.enabled ? "live" : ""}`} />
-          <strong>{status?.name || "Сценарий не применён"}</strong>
+          <strong>{status?.name || t("Сценарий не применён")}</strong>
           <span className="muted">
             {status?.enabled
-              ? `Активен${status.stage ? " · " + status.stage : ""}`
-              : "Выключен"}
-            {dirty && " · есть черновик"}
+              ? t("Активен{0}", [status.stage ? " · " + status.stage : ""])
+              : t("Выключен")}
+            {dirty && t(" · есть черновик")}
           </span>
         </div>
         {!!status?.stages.length && (
@@ -404,7 +418,10 @@ export default function Mocks({
         {status?.applied && (
           <details className="mock-help">
             <summary>
-              Переменные · {status.session_key} · контекстов: {status.sessions}
+              {t("Переменные · ")}
+              {status.session_key}
+              {t(" · контекстов: ")}
+              {status.sessions}
             </summary>
             <pre>{JSON.stringify(status.state, null, 2)}</pre>
           </details>
@@ -418,16 +435,19 @@ export default function Mocks({
         }}
       >
         <div className="mock-editor-pane">
-          <div className="script-library" aria-label="Библиотека сценариев">
+          <div
+            className="script-library"
+            aria-label={t("Библиотека сценариев")}
+          >
             <div className="script-library-picker">
               <input
-                aria-label="Поиск сценариев"
-                placeholder="Найти сценарий…"
+                aria-label={t("Поиск сценариев")}
+                placeholder={t("Найти сценарий…")}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
               <select
-                aria-label="Выбрать сценарий"
+                aria-label={t("Выбрать сценарий")}
                 value={selected}
                 disabled={busy || !library}
                 onChange={(e) => {
@@ -457,39 +477,39 @@ export default function Mocks({
                 onClick={() => transition(() => createScript())}
               >
                 <Plus size={14} />
-                Новый
+                {t("Новый")}
               </button>
             </div>
             <div className="script-library-actions">
               <input
-                aria-label="Название сценария"
+                aria-label={t("Название сценария")}
                 maxLength={100}
                 value={name}
                 disabled={busy || !library}
                 onChange={(e) => setName(e.target.value)}
               />
               <span className="muted script-save-state">
-                {unsaved ? "Не сохранён" : "Сохранён"}
+                {unsaved ? t("Не сохранён") : t("Сохранён")}
               </span>
               <button
                 className="button"
-                title="Сохранить в библиотеке (Ctrl+S)"
+                title={t("Сохранить в библиотеке (Ctrl+S)")}
                 disabled={busy || !library || !name.trim()}
                 onClick={() => run(saveCurrent)}
               >
                 <Save size={14} />
-                Сохранить
+                {t("Сохранить")}
               </button>
               <button
                 className="button subtle"
-                aria-label="Дублировать сценарий"
-                title="Дублировать сценарий"
+                aria-label={t("Дублировать сценарий")}
+                title={t("Дублировать сценарий")}
                 disabled={busy || !library}
                 onClick={() =>
                   transition(() =>
                     createScript(
                       draft.source,
-                      name.slice(0, 92) + " · копия",
+                      name.slice(0, 92) + t(" · копия"),
                       draft.folder,
                     ),
                   )
@@ -499,8 +519,8 @@ export default function Mocks({
               </button>
               <button
                 className="button subtle"
-                aria-label="Удалить сценарий"
-                title="Удалить из библиотеки"
+                aria-label={t("Удалить сценарий")}
+                title={t("Удалить из библиотеки")}
                 disabled={busy || !library}
                 onClick={() => setDeleteOpen(true)}
               >
@@ -518,10 +538,12 @@ export default function Mocks({
                 className="button subtle"
                 disabled={busy || !library}
                 onClick={() =>
-                  transition(() => createScript(demo, "Пример · example.com"))
+                  transition(() =>
+                    createScript(demo, t("Пример · example.com")),
+                  )
                 }
               >
-                Пример
+                {t("Пример")}
               </button>
               <button
                 className="button subtle"
@@ -539,7 +561,7 @@ export default function Mocks({
                 }
               >
                 <Upload size={13} />
-                Импорт
+                {t("Импорт")}
               </button>
               <button
                 className="button subtle"
@@ -554,7 +576,7 @@ export default function Mocks({
                 }
               >
                 <Download size={13} />
-                Экспорт .py
+                {t("Экспорт .py")}
               </button>
             </div>
           </div>
@@ -571,20 +593,22 @@ export default function Mocks({
                   );
                   setDraft((d) => ({ ...d, source: result.source }));
                   setNotice(
-                    "Переведено в Python. Проверьте ответы переходов: скрытого 200 и подавления повторов больше нет.",
+                    t(
+                      "Переведено в Python. Проверьте ответы переходов: скрытого 200 и подавления повторов больше нет.",
+                    ),
                   );
                 })
               }
             >
-              Перевести в Python
+              {t("Перевести в Python")}
             </button>
           )}
           <label className="mock-folder">
-            <span>Папка JSON</span>
+            <span>{t("Папка JSON")}</span>
             <div className="file-input">
               <input
-                aria-label="Папка JSON"
-                placeholder="Для ответов из файлов"
+                aria-label={t("Папка JSON")}
+                placeholder={t("Для ответов из файлов")}
                 value={draft.folder}
                 disabled={busy || !library}
                 onChange={(e) =>
@@ -593,7 +617,7 @@ export default function Mocks({
               />
               <button
                 className="button"
-                aria-label="Выбрать папку JSON"
+                aria-label={t("Выбрать папку JSON")}
                 disabled={busy || !library}
                 onClick={() =>
                   run(async () => {
@@ -609,7 +633,7 @@ export default function Mocks({
           <Suspense
             fallback={
               <div className="script-editor muted padded">
-                Загрузка редактора…
+                {t("Загрузка редактора…")}
               </div>
             }
           >
@@ -623,23 +647,23 @@ export default function Mocks({
             )}
             {editorStarted && !library && (
               <div className="script-editor muted padded" role="status">
-                Загрузка скрипта…
+                {t("Загрузка скрипта…")}
               </div>
             )}
           </Suspense>
           {(error || status?.load_error) && (
             <div className="inline-error" role="alert">
-              {error || status?.load_error}
+              {localizeMessage(error || status?.load_error || "")}
             </div>
           )}
           {notice && (
             <div className="mock-notice" role="status">
-              {notice}
+              {localizeMessage(notice)}
             </div>
           )}
           <div className="mock-apply">
             <span className="muted">
-              Применить этот скрипт: сохранить и сбросить состояние.
+              {t("Применить этот скрипт: сохранить и сбросить состояние.")}
             </span>
             <button
               className="button"
@@ -652,12 +676,14 @@ export default function Mocks({
                     document,
                   );
                   setNotice(
-                    `Проверено: ${result.stages.length} этапов. Рабочий сценарий не изменён.`,
+                    t("Проверено: {0} этапов. Рабочий сценарий не изменён.", [
+                      result.stages.length,
+                    ]),
                   );
                 })
               }
             >
-              Проверить
+              {t("Проверить")}
             </button>
             <button
               className="button primary"
@@ -673,27 +699,27 @@ export default function Mocks({
                   setDraft({ source: value.source, folder: value.folder });
                   await saveCurrent();
                   setNotice(
-                    "Сценарий применён" +
+                    t("Сценарий применён") +
                       (value.enabled
-                        ? " и активен."
-                        : ". Нажмите «Включить сценарий»."),
+                        ? t(" и активен.")
+                        : t(". Нажмите «Включить сценарий».")),
                   );
                 })
               }
             >
-              {busy && <LoaderCircle size={14} className="spin" />}Применить
-              сценарий
+              {busy && <LoaderCircle size={14} className="spin" />}
+              {t("Применить сценарий")}
             </button>
           </div>
         </div>
         <PaneSeparator
-          label="Ширина редактора сценария и журнала"
+          label={t("Ширина редактора сценария и журнала")}
           pane={workspaceSize}
         />
         <aside className="mock-log-pane">
           <div className="mock-editor-toolbar">
             <strong>
-              Срабатывания{" "}
+              {t("Срабатывания")}{" "}
               <span className="muted">{status?.logs.length || 0}/200</span>
             </strong>
             <button
@@ -701,7 +727,7 @@ export default function Mocks({
               disabled={busy}
               onClick={() => control("clear")}
             >
-              Очистить
+              {t("Очистить")}
             </button>
           </div>
           <div className="mock-log-list">
@@ -713,19 +739,21 @@ export default function Mocks({
                 >
                   <div>
                     <strong>
-                      {log.status || "→ сервер"} {log.method}
+                      {log.status || t("→ сервер")} {log.method}
                     </strong>
                     <time>
-                      {new Date(log.time * 1000).toLocaleTimeString()}
+                      {new Date(log.time * 1000).toLocaleTimeString(
+                        getLocale(),
+                      )}
                     </time>
                   </div>
                   <code>{log.path}</code>
                   <span>
-                    {log.stage || "Скрипт"} · {log.phase} · v{log.revision}
+                    {log.stage || t("Скрипт")} · {log.phase} · v{log.revision}
                   </span>
                   <small>
                     {log.source}
-                    {log.line ? ` · строка ${log.line}` : ""}
+                    {log.line ? t(" · строка {0}", [log.line]) : ""}
                   </small>
                   {log.transition && (
                     <strong className="mock-transition">
@@ -733,7 +761,11 @@ export default function Mocks({
                     </strong>
                   )}
                   {log.messages?.map((message, i) => (
-                    <small key={i}>{message}</small>
+                    <small key={i}>
+                      {log.stopped && i === (log.messages?.length || 0) - 1
+                        ? localizeMessage(message)
+                        : message}
+                    </small>
                   ))}
                   {!!Object.keys(log.state_changes || {}).length && (
                     <pre>{JSON.stringify(log.state_changes, null, 2)}</pre>
@@ -742,37 +774,33 @@ export default function Mocks({
               ))
             ) : (
               <p className="mock-help">
-                Здесь появятся обработчики, ошибки, переходы и изменения
-                состояния.
+                {t(
+                  "Здесь появятся обработчики, ошибки, переходы и изменения состояния.",
+                )}
               </p>
             )}
           </div>
           <details className="mock-help">
-            <summary>Как писать скрипты</summary>
+            <summary>{t("Как писать скрипты")}</summary>
             <p>
-              Обычный Python: app = Script("Название"), @app.get("/path") и
-              @app.post("/path"). Обработчик получает request и ctx. Верните
-              response(200, json=...), response(200, file="order.json") или None
-              для передачи в обычные правила и на сервер.
+              {t(
+                'Обычный Python: app = Script("Название"), @app.get("/path") и @app.post("/path"). Обработчик получает request и ctx. Верните response(200, json=...), response(200, file="order.json") или None для передачи в обычные правила и на сервер.',
+              )}
             </p>
             <p>
-              Область задаётся в коде: Script("Название",
-              hosts=["api.example.com"], path_prefix="/driver/",
-              unmatched="forward"). Без hosts и path_prefix подходят все домены
-              и пути. unmatched="block" возвращает 501 для неизвестных запросов
-              внутри области.
+              {t(
+                'Область задаётся в коде: Script("Название", hosts=["api.example.com"], path_prefix="/driver/", unmatched="forward"). Без hosts и path_prefix подходят все домены и пути. unmatched="block" возвращает 501 для неизвестных запросов внутри области.',
+              )}
             </p>
             <p>
-              ctx.state — изменяемый словарь. app.session_key = lambda r:
-              r.headers["X-Device-Id"] разделяет состояние по устройству. Без
-              ключа состояние общее. Scenario добавляет состояния:
-              @order.get("/path", state="created"), ctx.goto("completed").
-              Переходы всегда явные; повторный запрос выполняется снова.
+              {t(
+                'ctx.state — изменяемый словарь. app.session_key = lambda r: r.headers["X-Device-Id"] разделяет состояние по устройству. Без ключа состояние общее. Scenario добавляет состояния: @order.get("/path", state="created"), ctx.goto("completed"). Переходы всегда явные; повторный запрос выполняется снова.',
+              )}
             </p>
             <p>
-              ctx.stop() выключает весь скрипт после успешного обработчика.
-              Текущий ответ отправляется, следующие запросы идут обычным путём.
-              Состояние сохраняется; снова включить можно кнопкой.
+              {t(
+                "ctx.stop() выключает весь скрипт после успешного обработчика. Текущий ответ отправляется, следующие запросы идут обычным путём. Состояние сохраняется; снова включить можно кнопкой.",
+              )}
             </p>
             <pre>
               {
@@ -780,26 +808,24 @@ export default function Mocks({
               }
             </pre>
             <p>
-              Короткое имя поля должно быть уникальным во всём JSON. Также
-              доступны body.get(), body.remove(), точные пути order.start.time и
-              JSON Pointer /order/start/time. body.data — обычный словарь или
-              список Python.
+              {t(
+                "Короткое имя поля должно быть уникальным во всём JSON. Также доступны body.get(), body.remove(), точные пути order.start.time и JSON Pointer /order/start/time. body.data — обычный словарь или список Python.",
+              )}
             </p>
             <p>
-              @app.on_response получает request, response, ctx. Изменяйте
-              response.json, response.text и response.headers. Для запросов
-              доступны request.json, request.text, request.url и
-              request.headers.
+              {t(
+                "@app.on_response получает request, response, ctx. Изменяйте response.json, response.text и response.headers. Для запросов доступны request.json, request.text, request.url и request.headers.",
+              )}
             </p>
             <p>
-              Файлы загружаются при проверке/применении. Для вычисляемых имён
-              перечислите их в app.files. Скрипты выполняются в отдельном
-              процессе: обработчик до 2 секунд, инициализация до 10 секунд.
+              {t(
+                "Файлы загружаются при проверке/применении. Для вычисляемых имён перечислите их в app.files. Скрипты выполняются в отдельном процессе: обработчик до 2 секунд, инициализация до 10 секунд.",
+              )}
             </p>
             <p>
-              Python имеет доступ к файлам и системе. Применяйте доверенные
-              скрипты. Проверка тоже выполняет код верхнего уровня. После
-              перезапуска скрипт выключен.
+              {t(
+                "Python имеет доступ к файлам и системе. Применяйте доверенные скрипты. Проверка тоже выполняет код верхнего уровня. После перезапуска скрипт выключен.",
+              )}
             </p>
           </details>
         </aside>

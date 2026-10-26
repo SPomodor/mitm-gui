@@ -1,193 +1,96 @@
-# CHLS
+# mitm gui
 
-Desktop-прокси для разработки собственных приложений. Electron + React + TypeScript, Python + mitmproxy. Первая версия ориентирована на Windows x64.
+**by SPomodor** · **[Русская версия](README.ru.md)**
 
-Полное руководство по текущей версии, функциям, сценариям, данным, ограничениям и разработке: [CHLS_GUIDE.md](CHLS_GUIDE.md).
+[![Build and test](https://github.com/SPomodor/mitm-gui/actions/workflows/build.yml/badge.svg)](https://github.com/SPomodor/mitm-gui/actions/workflows/build.yml)
 
-## Запуск
+A desktop **mitmproxy GUI** for inspecting HTTP(S) traffic, connecting phones through WireGuard, rewriting requests and responses, and running Python scripts.
 
-Новая сборка v0.8.5: **`release/0.8.5/CHLS-0.8.5.exe`**, распакованная версия — **`release/0.8.5/win-unpacked/CHLS.exe`**. Предыдущие сборки остаются в `release/`. Python и Node.js на компьютере пользователя не нужны. Приложение запускает свой движок и останавливает его при выходе. Системный прокси и доверенные сертификаты Windows автоматически не изменяются.
+Built by **SPomodor with the assistance of OpenAI Codex**. This is an independent project, not an official mitmproxy product.
 
-При каждом запуске создаётся **новая сессия** и **сразу включается захват** с последними настройками HTTP/WireGuard. Предыдущие сессии доступны в боковой панели; правила и профили сохраняются. Ручная остановка действует до следующего запуска. Если порт занят, приложение открывается с сообщением об ошибке и позволяет исправить настройки.
+## Download
 
-Для разработки (Node.js 24, Python 3.13):
+**[Download a release](https://github.com/SPomodor/mitm-gui/releases)** · [CI builds](https://github.com/SPomodor/mitm-gui/actions/workflows/build.yml)
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/setup.ps1
+The supported distribution is **Windows x64**: `mitm-gui-<version>-win-x64.exe`. No separate Python or Node.js installation is required. If no release has been published yet, open a successful Actions run and download its `mitm-gui-windows-x64` artifact.
+
+Builds are currently unsigned; Windows may show an unknown-publisher warning. macOS is not yet verified: native build commands are provided for porting, but the Windows workflow does not produce a Mac application.
+
+## Features
+
+- HTTP/HTTPS proxy and WireGuard with phone setup instructions and a QR code.
+- Selective SSL decryption by domain, wildcard, IP and optional port.
+- Encrypted connection history with addresses, timing and byte counts.
+- Request/response inspector, JSON/text search, original and modified versions, body download.
+- Rewrite rules for headers, query parameters, destination, URL, path, status, bodies and JSON fields.
+- Map Local, Blocklist, ordered rules and independent rule editor windows.
+- Python scripts with conditions, variables, request/response handlers and optional scenario states.
+- Script library with save, duplicate, rename, search, `.py` import/export and syntax highlighting.
+- Session archives and HAR export, including optional Charles connection summaries.
+- Resizable panes, light/dark themes and English/Russian UI with automatic language selection.
+
+## Quick start
+
+1. Launch the app. HTTP capture and traffic recording start with the saved settings.
+2. Open **Connect device** and choose HTTP proxy or WireGuard.
+3. For HTTPS, install the CA from `mitm.it` on the device and enable trust.
+4. Open your app or website; requests appear in **Traffic**.
+5. Open **Scripts → Example**, apply and enable it, then request `http://example.com/api/hello` through the proxy.
+
+**Recording** controls history storage. **Capture** starts/stops listeners. The app does not automatically change the system proxy, firewall or CA trust. Applied scripts start disabled after restarting.
+
+## Documentation
+
+| Guide | English | Русский |
+| --- | --- | --- |
+| App, device setup, SSL, rules and history | [Application guide](docs/application.md) | [Руководство приложения](docs/application.ru.md) |
+| Python API, JSON helpers and scenarios | [Scripting guide](SCRIPTS.md) | [Документация скриптов](docs/scripts.ru.md) |
+| Process boundaries and implementation | [Architecture](ARCHITECTURE.md) | — |
+| Development, CI and releases | [Contributing](CONTRIBUTING.md) | — |
+
+## Develop locally
+
+Requirements: **Node.js 24**, **Python 3.13** and Git. Run from the repository root:
+
+```sh
+git clone https://github.com/SPomodor/mitm-gui.git
+cd mitm-gui
+npm run setup
 npm run dev
 ```
 
-## Управление трафиком
+Setup creates `.venv`, installs Python dependencies and PyInstaller, and runs `npm ci`. Development uses Vite, Electron and the Python backend from `.venv`.
 
-Размеры рабочих областей меняются перетаскиванием разделителей: ширина боковой панели, список запросов / инспектор, редактор сценария / журнал, высота разделов сессий / хостов. Настройки сохраняются между запусками и автоматически ограничиваются при уменьшении окна. Двойной щелчок по разделителю возвращает его исходный размер. С клавиатуры: Tab до разделителя, стрелки для изменения, Shift + стрелки для крупного шага; Home / End — минимальный / максимальный размер, Enter — сброс. Перенос панели не меняет данные или черновики.
-
-- **Запись / На паузе** в верхней панели управляет сохранением новых запросов в сессию. Красная точка означает включённую запись, значок паузы — остановленную. HTTP-прокси, WireGuard, правила и сценарии продолжают работать. Начатые до паузы записываемые запросы сохраняют свой ответ; запросы, начатые на паузе, не появляются после возобновления. При новом запуске запись включена.
-- **Перехват** слева внизу объединяет статус с кнопкой питания и управляет самими слушателями и соединениями прокси. Подключение устройства доступно в левой панели; щит в верхней панели переключает расшифровку SSL.
-- **Архив сессий** — сворачиваемый раздел под текущей сессией. При закрытии приложения или создании новой сессии предыдущая архивируется. После аварийного завершения незакрытые сессии архивируются при следующем запуске; уже существовавшая история также переносится в архив. Архивирование сохраняет названия, запросы и тела. Можно открывать, переименовывать, экспортировать и удалять архивные сессии. Просмотр архива не меняет сессию записи; кнопка «К текущей сессии» возвращает к новому трафику.
-- **SSL вкл / выкл** управляет расшифровкой HTTPS, в том числе через WireGuard. В выключенном состоянии новые TLS-соединения проходят напрямую с сертификатом сервера: их содержимое не видно и HTTPS-правила/сценарии не применяются. Обычный HTTP продолжает обрабатываться. Уже открытые соединения сохраняют свой режим — переподключите приложение на телефоне. Настройка сохраняется между запусками.
-- **Выборочная расшифровка SSL**: стрелка рядом со щитом открывает режимы «Все хосты» / «Только выбранные». По одному домену или IP на строку, поддерживаются `*.example.com` (только поддомены) и необязательный порт, например `api.example.com:443`. Пустой список выбранных ничего не расшифровывает; общий выключатель сохраняет настройки. Через контекстное меню трафика можно добавить хост. Выбор по пути до расшифровки невозможен; настройки действуют на новые соединения и сохраняются после перезапуска.
-- **Зашифрованные соединения** при выключенном SSL сохраняются в истории как TLS/DTLS/QUIC со значком замка: домен/SNI либо IP, порт, время, состояние и объём отправленных/полученных данных. Подсказка замка объясняет, что содержимое недоступно. Это запись соединения целиком; отдельные HTTP-запросы и содержимое недоступны. Пауза записи, архив и очистка работают и для туннелей. Внутри приложения это отдельный тип записи, без HTTP-полей. Обычный HAR содержит только HTTP; для включения условных сводок CONNECT/CONNECT-UDP выберите «Включить сводки соединений для Charles» в диалоге экспорта. Старые сессии читаются без перезаписи базы. UDP/QUIC/DTLS пока отмечены как экспериментальные.
-- **Очистить текущую сессию** удаляет трафик выбранной сессии после подтверждения в диалоге приложения. Новые запросы продолжают записываться; поздние ответы очищенных запросов не восстанавливают их.
-- Кнопка корзины рядом с названием удаляет **старую сессию** вместе с её трафиком и телами. Сессию, в которую сейчас идёт запись, удалить нельзя: сначала создайте новую кнопкой «+». Если открыта удаляемая сессия, интерфейс вернётся к текущей.
-- **Фокус по хостам**: кнопка фильтра рядом с хостом или пункт контекстного меню запроса добавляет/убирает хост. Переключатель **Все хосты / В фокусе** выбирает весь трафик или отмеченные домены; захват и запись остальных сохраняются. Набор хостов хранится между запусками. Фокус сопоставляет точное имя хоста.
-- **Ctrl/Cmd+F** открывает поиск в теле выбранного Request/Response, включая оригинал и результат изменения. Есть подсветка, счётчик, переходы **Enter / Shift+Enter** и закрытие **Esc**. Из Headers поиск переключается на Body; **Ctrl/Cmd+K** по-прежнему ищет трафик в таблице.
-- Большие тела отображаются виртуальным списком: создаются только видимые строки с небольшим запасом. Очень длинные строки визуально переносятся, продолжения отмечены `↳`. Подсветка обрабатывает ограниченные фрагменты, Pretty кешируется для выбранного тела; поиск работает по всему превью, а не только по видимым строкам. Для копирования текста целиком используйте кнопку копирования; для сохранения всех исходных байтов — кнопку скачивания. Лимит превью 256 KB сохранён.
-- Pretty форматирует и обрезанное JSON-превью: добавляет отступы и переносы доступной части, сохраняя строки, экранирование и незаконченный конец. Недостающие значения и закрывающие скобки не добавляются; пометка об обрезанном теле остаётся. Выключение Pretty показывает исходный текст превью.
-
-## Что работает
-
-- HTTP/HTTPS-прокси и WireGuard, вместе или по отдельности.
-- QR-код и экспорт WireGuard-профиля для одного телефона одновременно.
-- Таблица реального трафика с виртуализацией, дерево хостов, поиск по URL, методу, статусу и IP клиента.
-- Инспектор Request/Response: headers, текст/JSON, оригинал и результат изменений, сохранение исходных байтов тела.
-- Rewrite: добавление, изменение и удаление заголовков и query-параметров; Host, Path, URL, Response Status, Body и поля JSON. Поиск/замена с regex, группами `$1`, регистром, полным совпадением и первым/всеми совпадениями. Поддерживаются стадии «Запрос», «Ответ», «Запрос и ответ».
-- Map Local: файл, Content-Type, HTTP-статус; файл перечитывается при каждом запросе.
-- Blocklist: HTTP-статус или разрыв соединения.
-- Порядок правил, включение/выключение, дублирование, импорт/экспорт JSON.
-- Создание и редактирование правил в отдельных немодальных окнах: главное окно с запросами доступно для просмотра и копирования данных. Можно открыть несколько разных правил, менять размер окон и переключаться через Alt+Tab. Повторное открытие того же правила фокусирует его текущий черновик. Кнопка «К запросам» переводит фокус в главное окно; Ctrl/Cmd+S сохраняет правило, Esc закрывает редактор без сохранения. При сохранении изменения других правил сохраняются.
-- Журнал срабатываний правил и ошибок для каждого запроса.
-- Автоматическое сохранение сессий и правил между запусками.
-- Переименование сессий кнопкой с карандашом в боковой панели. Названия сохраняются между запусками.
-- Экспорт сессии кнопкой со стрелкой рядом с названием: диалог выбора обычного HAR 1.2 с HTTP-запросами/ответами либо режима совместимости с Charles, включающего сводки соединений. Экспорт не зависит от фильтров и ограничения таблицы в 10 000 записей. Это снимок сессии на момент экспорта; захват продолжается. Исходные сообщения и срабатывания правил включаются в расширение `_chls`. Потоковые и ранее несохранённые тела помечаются как недоступные. Импорт сессий в CHLS пока не реализован.
-- Светлая, тёмная и системная тема, контекстное меню, навигация по запросам стрелками.
-- Переключатель Android/iPhone рядом с установкой сертификата; компактный выделенный блок `mitm.it` с копированием. Выбор системы также меняет шаги Wi-Fi-прокси. Вспомогательный текст интерфейса — не меньше 12 px.
-- Домены в списке, инспекторе и создаваемых правилах берутся из HTTP Host / HTTP/2 authority, затем из TLS SNI. IP соединения не подменяется; если домен неизвестен, показывается IP. Старые сессии восстанавливают домен из сохранённого URL, если он там есть.
-
-## Скрипты и сценарии v0.8
-
-Настройки области находятся в коде: `Script("Название", hosts=["api.example.com"], path_prefix="/api/", unmatched="forward")`. В интерфейсе — библиотека сценариев и папка JSON.
-
-Редактор: подсветка Python, Tab/Shift+Tab (4 пробела), автоотступы, undo/redo, поиск Ctrl+F с подсветкой и переходами.
-
-Обычный Python с API `chls`: обработчики запросов и ответов, условия, функции,
-управляемое состояние и JSON-файлы. `Scenario` добавляет состояния и явные переходы.
-Библиотека хранит несколько сценариев с названиями и отдельными папками JSON.
-Доступны поиск, создание, копирование, переименование, удаление, импорт и экспорт `.py`.
-«Сохранить» / Ctrl+S сохраняет код без выполнения; «Применить сценарий» сохраняет и
-устанавливает его в движок. Выбор сценария в библиотеке не меняет работающий скрипт.
-Кнопка «Пример» создаёт [учебный сценарий example.com](examples/basic/scenario.py):
-`GET http://example.com/api/hello`, `POST /api/finish`, `GET /api/result`.
-JSON для него не нужны. Шаблон 187 больше не входит в поставку и интерфейс.
-
-```python
-from chls import Script, response
-app = Script("Заказ")
-
-@app.get("/api/order")
-def order(request, ctx):
-    body = ctx.load_json("order.json")
-    body.set("time", 123)
-    return response(200, json=body)
+```sh
+npm run build          # TypeScript check and production frontend
+npm test               # Python unit and integration tests
+npm run test:format    # JSON body formatting tests
+npm run test:ui        # Translation catalog and library persistence tests
+npm run package        # Windows portable app with bundled Python engine
 ```
 
-Короткое имя `time` ищется во всём JSON и должно быть единственным.
-Точные пути `order.start.time` и JSON Pointer `/order/start/time` доступны и в скриптах,
-и в Rewrite. Неоднозначность выдаёт ошибку с вариантами путей без изменения документа.
+The EXE is written to `release/`. Build output, dependencies, private keys and captured traffic are excluded from Git.
 
-Полное описание API, контекстов, снимков файлов и миграции: [SCRIPTS.md](SCRIPTS.md).
-Скрипты выполняются в отдельном процессе, обработчик ограничен двумя секундами.
-`ctx.stop()` выключает весь скрипт после успешного обработчика, сохраняя текущий ответ и состояние.
-Это полноценный Python: применяйте доверенные файлы; проверка выполняет код верхнего уровня.
-Старые `.chls` переводятся в редактируемый Python-черновик. После перезапуска модуль выключен.
+## Build on GitHub
 
-## Подключить телефон через WireGuard
+Every push and pull request runs [Build and test](.github/workflows/build.yml) on Windows: frontend/backend tests, a frozen Python engine, real proxy integration checks, packaged desktop smoke tests and portable packaging.
 
-1. Откройте **Подключение**. Включите WireGuard и доступ из локальной сети. По умолчанию UDP-порт — **51820**, HTTP-прокси — **8080/TCP**.
-2. Нажмите **Начать захват**. В поле адреса компьютера выберите доступный телефону IPv4 компьютера (например, `192.168.1.10`). Если в компьютере есть виртуальные адаптеры или VPN, автоматически выбранный адрес может потребовать замены. Нажмите **Обновить QR**.
-3. В приложении WireGuard на Android/iPhone добавьте туннель через QR-код или импорт `.conf`. Включите его.
-4. Если трафик не поступает, проверьте доступность компьютера, изоляцию клиентов Wi-Fi и входящие правила брандмауэра Windows для выбранных портов. Приложение не меняет брандмауэр автоматически.
-5. Откройте **http://mitm.it** через подключённый телефон и установите публичный CA. Альтернатива: кнопка **Сохранить CA** и передача файла на устройство.
-6. Для iPhone включите полное доверие CA в настройках сертификатов. Для Android настройте доверие в debug-сборке своего приложения. Установки пользовательского CA может быть недостаточно.
-7. Откройте своё приложение. Появление HTTPS-запросов в таблице подтверждает успешную расшифровку.
+- Download `mitm-gui-windows-x64` from a successful run's **Artifacts** section.
+- Use **Actions → Build and test → Run workflow** for a manual build.
+- Push a tag matching `package.json`, such as `v0.9.0`, to publish a GitHub Release after all checks pass. The release includes the EXE and SHA-256 checksum.
 
-Один сгенерированный WireGuard-профиль предназначен для **одного устройства одновременно**. В этой версии профиль направляет в туннель IPv4; IPv6 может идти напрямую. Другой VPN на телефоне может конфликтовать с WireGuard. Туннель не отменяет проверки TLS и certificate pinning.
+The workflow uses the built-in `GITHUB_TOKEN`; no personal access token or signing secret is required for the unsigned Windows build. See [release instructions](CONTRIBUTING.md#releases).
 
-## Обычный прокси
+## Limits and data
 
-В настройках Wi-Fi телефона выберите ручной HTTP-прокси: IPv4 компьютера и TCP-порт приложения. Для браузера/desktop-приложения укажите `127.0.0.1:8080` в его настройках прокси. HTTPS также требует доверия CA. Автоматическое переключение системного прокси и Local Capture в первую версию не входят.
+Use the tool with apps, devices and traffic you are authorized to inspect. Captures can contain credentials and personal data: do not attach real HAR files, private CA keys, WireGuard profiles or production tokens to public issues.
 
-Пример debug-конфигурации Android (для сетевого стека, использующего Network Security Config):
+HTTPS inspection requires CA trust. Certificate pinning needs a debug configuration in your own app. Without decryption, HTTPS paths and bodies are unavailable. UDP/QUIC/DTLS capture is experimental; WireGuard IPv6 support is limited. Python scripts have filesystem/system access; validation executes top-level code.
 
-```xml
-<!-- res/xml/network_security_config.xml -->
-<network-security-config>
-    <debug-overrides>
-        <trust-anchors>
-            <certificates src="user" />
-        </trust-anchors>
-    </debug-overrides>
-</network-security-config>
-```
+The project was previously named CHLS. Existing profiles and `from chls import ...` scripts remain compatible; new scripts use `from mitm_gui import ...`.
 
-В `application` манифеста укажите `android:networkSecurityConfig="@xml/network_security_config"`. Эта настройка доверия действует только при `android:debuggable=true`. Если библиотека отдельно реализует pinning, настройте debug-поведение в ней.
+## Credits and license
 
-## Создать правило
+**by SPomodor**. Developed with the assistance of **OpenAI Codex**.
 
-Правый клик по запросу → **Создать Rewrite / Map Local / Blocklist**. Хост, путь и метод заполняются из запроса. Либо откройте раздел **Правила**.
-
-- Хост сопоставляется без учёта регистра, поддерживается `*.example.com`. Пустой хост соответствует любому.
-- Путь и **Query string** задаются отдельно. При вставке полного URL в поле пути хост, путь и параметры заполняются автоматически. Параметры вводятся без `?`; пустое поле означает любые параметры. Выбранное сопоставление (точное, вхождение строки или Python regex) применяется к пути и заполненному query отдельно. Порядок и URL-кодирование параметров учитываются. Для любого пути — пустая строка и режим «Содержит». Старые правила без поля `query` сохраняют сопоставление по полному пути с параметрами; при открытии обычного правила в редакторе путь с параметрами разделяется. Regex старых правил автоматически не переписывается.
-- Правила выполняются сверху вниз. После Blocklist или Map Local запрос не отправляется на сервер. Затем Rewrite ответа применяется и к локально созданному ответу.
-- Для JSON новое значение — валидный JSON: `true`, `42`, `"text"`, `{"flag":true}`. Путь `data.items.0.enabled` обращается к полю первого элемента массива. Промежуточные объекты должны существовать.
-- Запрос использует одну версию правил на обеих стадиях. Изменение правил действует на новые запросы.
-- Ошибка отдельного действия сохраняется в инспекторе; остальные правила продолжают выполняться.
-
-### Расширенный Rewrite в v0.2
-
-Выберите операцию в «Что изменить». **Условия** хоста/пути/метода всегда относятся к исходному запросу, даже если предыдущее правило уже изменило его URL. **Поиск** и **Замена** описывают изменение выбранного поля.
-
-| Операция | Действие |
-|---|---|
-| Set Header | Установить значение, создать отсутствующий заголовок; совместимость с предыдущей версией |
-| Add / Modify / Remove Header | Добавить отдельный заголовок, условно изменить/переименовать или удалить совпавшие экземпляры, сохраняя дубликаты |
-| Host | Изменить реальный сервер назначения и Host / :authority; порт остаётся прежним |
-| Path | Изменить путь, сохранив query string |
-| URL | Поиск/замена в полном URL; пустой поиск заменяет URL целиком |
-| Add / Modify / Remove Query Param | Добавить, изменить/переименовать или удалить параметры; дубликаты и порядок сохраняются |
-| Response Status | Например, `200 → 404`; изменяется также reason phrase для HTTP/1. Ответы 204/304 отправляются без тела |
-| Body | Поиск/замена текста, включая regex и ссылки на группы |
-| Поле JSON | Прежние операции с JSON по пути через точку |
-
-Пустые поля поиска означают «любое значение». Для Modify имена по умолчанию сопоставляются целиком без учёта регистра; с regex допускается частичное совпадение имени. Регистр значения управляется отдельным переключателем. «Значение целиком» требует совпадения всего поля. Пустое поле замены сохраняет прежнее значение; для удаления содержимого включите **«Заменить значение пустой строкой»**. У Add пустое значение создаёт пустое поле.
-
-Regex использует синтаксис Python. Ссылки в замене: `$1`, `$2`, `${name}`; `$$` вставляет `$`. Группы имени и значения независимы. Замена имени выполняется по первому совпадению внутри имени; «Первое / Все совпадения» управляет заменами значений и обходом повторяющихся полей. Для Body и URL это первый/все фрагменты текста. Статус применяется только к ответу, URL/Host/Path/query — только к запросу. Заголовки, Body и JSON могут применяться к обеим стадиям.
-
-Примеры: **Response Status** — поиск `200`, значение целиком, замена `404`; **Body** — regex `("enabled":\s*)false`, замена `$1true`; **Modify Query Param** — имя `env`, значение `production`, замена `staging`.
-
-Старые правила и экспорты CHLS продолжают работать без изменения поведения. При редактировании старых Body/URL форма переводится в расширенный вид с сохранением их прежних настроек. Charles XML не импортируется; совместимость относится к JSON-формату CHLS. Поведение поиска/замены ориентировано на [Rewrite Tool Charles](https://www.charlesproxy.com/documentation/tools/rewrite/).
-
-## Данные и ограничения
-
-Данные хранятся в `%APPDATA%/CHLS/engine`: SQLite, каталог `bodies`, `rules.json`, настройки и уникальный CA в `certificates`. Для резервной копии закройте приложение и скопируйте весь каталог. CA с закрытым ключом остаётся на компьютере; кнопка экспорта выдаёт только публичный сертификат. `.conf` WireGuard содержит закрытый ключ клиента.
-
-- Тела свыше **8 MB** передаются потоком, не сохраняются и не изменяются через body Rewrite. Map Local ограничен 8 MB. Предпросмотр текста ограничен 256 KB.
-- Список показывает последние **10 000** запросов выбранной сессии. На диске история сохраняется до очистки сессии; автоматической ротации пока нет.
-- Просмотр изображений, WebSocket-сообщений, импорт HAR, Replay, Map Remote, Breakpoints, Local Capture и macOS-сборка отложены.
-- Закрытие приложения завершает захват. Перезагрузка только интерфейса сохраняет работу движка.
-- macOS предусмотрена структурой проекта, но эта сборка и проверки выполнены на Windows.
-
-Горячие клавиши: **Ctrl/Cmd+K** — поиск трафика; **Ctrl/Cmd+F** — поиск в теле запроса/ответа; **Enter / Shift+Enter** — следующее/предыдущее совпадение; **Ctrl/Cmd+Shift+R** — старт/стоп захвата; **Esc** — закрыть поиск или диалог; стрелки вверх/вниз — выбрать запрос.
-
-## Проверки и сборка
-
-```powershell
-npm run build
-npm test
-# В отдельном терминале npx vite, затем:
-node scripts/smoke-ui.cjs
-
-# Собрать Windows portable с Python внутри:
-npm run package
-# Проверить собранное приложение:
-node scripts/smoke-ui.cjs --packaged
-# Проверить самораспаковывающийся portable EXE:
-node scripts/smoke-ui.cjs --portable
-```
-
-Интеграционные тесты поднимают реальный backend и локальный upstream: захват, Rewrite, gzip, Map Local, Blocklist, WireGuard-слушатель и профиль, сессии, валидация, конфликт портов. UI smoke-тест запускает Electron, получает QR-код, отправляет настоящий запрос, создаёт Rewrite через интерфейс и проверяет изменение результата, отключение правила, темы и остановку. Подключение физического телефона требует отдельной проверки.
-
-Подробности устройства проекта: [ARCHITECTURE.md](ARCHITECTURE.md).
-
-Официальная документация: [mitmproxy](https://docs.mitmproxy.org/stable/), [Android Network Security Config](https://developer.android.com/privacy-and-security/security-config), [Electron security](https://www.electronjs.org/docs/latest/tutorial/security).
-
-Пути установки сертификатов в подсказках: [Android / Pixel](https://support.google.com/pixelphone/answer/2844832), [полное доверие сертификату на iPhone](https://support.apple.com/en-gb/102390). На Android названия пунктов зависят от производителя устройства.
+[ISC license](LICENSE). Third-party components retain their own licenses; see [NOTICE](NOTICE). The network engine is provided by [mitmproxy](https://github.com/mitmproxy/mitmproxy).

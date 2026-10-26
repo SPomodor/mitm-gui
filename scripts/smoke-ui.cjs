@@ -39,14 +39,15 @@ async function unusedPort() {
       ? {
           executablePath: path.resolve(
             portable
-              ? path.join(buildDirectory, `CHLS-${version}.exe`)
-              : path.join(buildDirectory, "win-unpacked/CHLS.exe"),
+              ? path.join(buildDirectory, `mitm-gui-${version}-win-x64.exe`)
+              : path.join(buildDirectory, "win-unpacked/mitm gui.exe"),
           ),
           args: [],
         }
       : { args: [path.resolve(".")] }),
     env: {
       ...process.env,
+      CHLS_SYSTEM_LOCALE: "ru-RU",
       CHLS_USER_DATA: path.join(
         output,
         (packaged ? "packaged-data-" : "dev-data-") + Date.now(),
@@ -230,7 +231,7 @@ async function unusedPort() {
     await expect(
       page.getByRole("button", { name: "SSL вкл", exact: true }).locator("svg"),
     ).toHaveCount(1);
-    await page.locator(".bottom-meta select").selectOption("dark");
+    await page.getByLabel("Тема оформления", { exact: true }).selectOption("dark");
     await page.screenshot({
       animations: "disabled",
       path: path.join(output, "01-traffic.png"),
@@ -901,7 +902,7 @@ async function unusedPort() {
       animations: "disabled",
       path: path.join(output, "05-light-compact.png"),
     });
-    await page.locator(".bottom-meta select").selectOption("dark");
+    await page.getByLabel("Тема оформления", { exact: true }).selectOption("dark");
     await page
       .getByRole("button", { name: /^Переименовать:/ })
       .first()
