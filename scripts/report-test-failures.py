@@ -16,5 +16,6 @@ if report.exists():
             failure = case.find('error')
         if failure is not None:
             title = f"{case.get('classname', '')}.{case.get('name', '')}"
-            detail = (failure.text or failure.get('message', 'Test failed'))[-12000:]
+            # GitHub truncates long annotations; retain the exception at the tail.
+            detail = (failure.text or failure.get('message', 'Test failed'))[-2500:]
             print(f'::error title={escape(title)}::{escape(detail)}')
