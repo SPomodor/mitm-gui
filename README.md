@@ -107,3 +107,9 @@ The project was previously named CHLS. Existing profiles and `from chls import .
 **by SPomodor**. Developed with the assistance of **OpenAI Codex**.
 
 [ISC license](LICENSE). Third-party components retain their own licenses; see [NOTICE](NOTICE). The network engine is provided by [mitmproxy](https://github.com/mitmproxy/mitmproxy).
+
+## macOS
+
+Separate Apple Silicon (arm64) and Intel (x64) DMG/ZIP packages include native engines. Local verification covers macOS 15.8.1 on Apple Silicon; Intel execution awaits CI. Packaging requires macOS 14 or later, but macOS 14 has not been separately tested. Without Apple credentials builds have only an ad-hoc signature and are not notarized.
+
+[Installation, builds, proxy, Keychain and signing](docs/macos.md) · [Validation record](docs/macos-validation.md). Closing the window keeps capture running in the Dock; Cmd+Q quits. System proxy and CA trust setup/restoration remain explicit user actions.

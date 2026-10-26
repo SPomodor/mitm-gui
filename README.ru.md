@@ -99,3 +99,9 @@ HTTPS требует доверия CA; pinning настраивается в de
 **by SPomodor**. Разработано при помощи **OpenAI Codex**.
 
 [ISC](LICENSE). Зависимости сохраняют свои лицензии; см. [NOTICE](NOTICE). [mitmproxy](https://github.com/mitmproxy/mitmproxy) обеспечивает сетевой движок.
+
+## macOS
+
+Отдельные DMG/ZIP для Apple Silicon (arm64) и Intel (x64) включают нативный движок. Локально проверена macOS 15.8.1 на Apple Silicon; выполнение Intel ожидает CI. В пакете задан минимум macOS 14, но эта версия отдельно не проверена. Сборки без Apple credentials имеют только ad-hoc подпись и не notarized.
+
+[Установка, сборка, прокси, Связка ключей и подпись](docs/macos.ru.md) · [Результаты проверок](docs/macos-validation.md). Закрытие окна оставляет перехват работающим в Dock; Cmd+Q завершает приложение. Системный прокси и доверие CA настраиваются и восстанавливаются пользователем.

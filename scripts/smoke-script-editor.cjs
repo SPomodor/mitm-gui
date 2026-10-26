@@ -1,3 +1,4 @@
+delete process.env.ELECTRON_RUN_AS_NODE;
 const { _electron: electron, expect } = require("@playwright/test");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -19,7 +20,7 @@ const net = require("node:net");
   const application = await electron.launch({
     ...(packaged
       ? {
-          executablePath: require("./windows-build.cjs").executable,
+          executablePath: require("./desktop-build.cjs").executable,
           args: [],
         }
       : { args: [path.resolve(".")] }),
@@ -44,21 +45,25 @@ const net = require("node:net");
     // CodeMirror virtualizes its DOM. Replace the document through its real
     // select-all key binding, rather than Playwright's DOM-only fill().
     async function setCode(text) {
-      await editor.press("Control+a");
+      await editor.press("ControlOrMeta+a");
       await page.keyboard.insertText(text);
     }
 
     await setCode("value = 1\nother = 2");
-    await editor.press("Control+Home");
+    await editor.press(
+      process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home",
+    );
     await editor.press("Tab");
     await expect(lines.nth(0)).toHaveText(/^ {4}value = 1$/);
-    await editor.press("Control+z");
+    await editor.press("ControlOrMeta+z");
     await expect(lines.nth(0)).toHaveText("value = 1");
-    await editor.press("Control+y");
+    await editor.press(
+      process.platform === "darwin" ? "Meta+Shift+z" : "Control+y",
+    );
     await expect(lines.nth(0)).toHaveText(/^ {4}value = 1$/);
     await editor.press("Shift+Tab");
     await expect(lines.nth(0)).toHaveText("value = 1");
-    await editor.press("Control+a");
+    await editor.press("ControlOrMeta+a");
     await editor.press("Tab");
     expect(await lines.allTextContents()).toEqual([
       "    value = 1",
@@ -67,7 +72,9 @@ const net = require("node:net");
     await editor.press("Shift+Tab");
     expect(await lines.allTextContents()).toEqual(["value = 1", "other = 2"]);
     await setCode("if True:");
-    await editor.press("Control+End");
+    await editor.press(
+      process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End",
+    );
     await editor.press("Enter");
     await page.keyboard.insertText("value = 1");
     await expect(lines.nth(1)).toHaveText(/^ {4}value = 1$/);
@@ -85,7 +92,9 @@ const net = require("node:net");
     );
     for (const theme of ["dark", "light"]) {
       await page.getByLabel("Тема оформления").selectOption(theme);
-      await editor.press("Control+Home");
+      await editor.press(
+        process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home",
+      );
       await page.screenshot({ path: path.join(output, `editor-${theme}.png`) });
       const colors = await editor
         .locator(".script-token-keyword")
@@ -98,8 +107,10 @@ const net = require("node:net");
     }
 
     await setCode("needle = 1\nmessage = 'needle'\nlast = 'NEEDLE'");
-    await editor.press("Control+Home");
-    await editor.press("Control+f");
+    await editor.press(
+      process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home",
+    );
+    await editor.press("ControlOrMeta+f");
     const input = page.getByRole("textbox", {
       name: "Найти в скрипте",
       exact: true,
@@ -133,8 +144,10 @@ const net = require("node:net");
     await setCode(
       "# needle first\n" + "value = 1\n".repeat(1500) + "# needle last",
     );
-    await editor.press("Control+Home");
-    await editor.press("Control+f");
+    await editor.press(
+      process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home",
+    );
+    await editor.press("ControlOrMeta+f");
     await input.fill("needle");
     await expect(search.getByRole("status")).toHaveText("1/2");
     await input.press("Enter");
@@ -154,7 +167,9 @@ const net = require("node:net");
       .getByRole("navigation")
       .getByRole("button", { name: /^Сценарии/ })
       .click();
-    await editor.press("Control+Home");
+    await editor.press(
+      process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home",
+    );
     await expect(editor).toContainText('app = Script("Editor draft")');
     await page
       .getByRole("button", { name: "Применить сценарий", exact: true })
@@ -172,7 +187,9 @@ const net = require("node:net");
     await expect(
       page.getByRole("button", { name: "Применить сценарий", exact: true }),
     ).toBeInViewport({ ratio: 1 });
-    await editor.press("Control+Home");
+    await editor.press(
+      process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home",
+    );
     await page.screenshot({ path: path.join(output, "editor-compact.png") });
     expect(errors).toEqual([]);
     process.stdout.write(

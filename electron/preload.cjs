@@ -1,5 +1,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("chls", {
+  platform: process.platform,
   language: ipcRenderer.sendSync("get-language"),
   setLanguage: (preference) => ipcRenderer.invoke("set-language", preference),
   onLanguage: (callback) => {

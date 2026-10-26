@@ -205,3 +205,7 @@ Back up the profile only while the app is closed. It may contain credentials, pr
 ## Windows ARM64 (hybrid)
 
 Version 0.9.1 adds a native ARM64 interface with the x64 engine running under Windows 11 emulation. It is not a fully native ARM64 build. Windows x86/32-bit, ARM32 and Windows 10 ARM are not supported. Choose the correct architecture in Releases.
+
+## macOS
+
+See the [macOS guide](macos.md) for DMG/ZIP installation, Gatekeeper, manual HTTP/HTTPS proxy setup/restoration, explicit Keychain CA trust, WireGuard and the profile under `~/Library/Application Support/mitm-gui`. Apple Silicon/macOS 15.8.1 is locally verified; see the [validation record](macos-validation.md) for Intel and other versions. Closing the window hides it; Cmd+Q quits capture. Use Cmd+K/F/S for search and save.

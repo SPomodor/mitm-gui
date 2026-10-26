@@ -23,7 +23,8 @@ let window,
   api,
   secret,
   backendReady,
-  quitting = false;
+  quitting = false,
+  quitRequested = false;
 const root = path.join(__dirname, "..");
 const editors = new Map();
 if (process.env.CHLS_USER_DATA) {
@@ -172,6 +173,8 @@ async function startBackend() {
           : "mitm-gui-engine",
       )
     : python;
+  if (app.isPackaged && process.platform !== "win32")
+    fs.accessSync(exe, fs.constants.X_OK);
   const args = app.isPackaged
     ? ["--port", String(port)]
     : ["-m", "backend", "--port", String(port)];
@@ -211,6 +214,7 @@ async function startBackend() {
       ]);
   });
   for (let i = 0; i < 150; i++) {
+    if (quitting) return;
     if (failure) throw failure;
     try {
       await request("/status");
@@ -252,6 +256,7 @@ function configureWindow(target) {
       cancelId: 0,
     });
     if (choice === 1) event.preventDefault();
+    else quitRequested = false;
   });
   target.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   target.webContents.on("will-navigate", (event) => event.preventDefault());
@@ -475,7 +480,21 @@ app.whenReady().then(async () => {
     Menu.buildFromTemplate([
       {
         label: "mitm gui",
-        submenu: [{ role: "about" }, { type: "separator" }, { role: "quit" }],
+        submenu: [
+          { role: "about" },
+          ...(process.platform === "darwin"
+            ? [
+                { type: "separator" },
+                { role: "services" },
+                { type: "separator" },
+                { role: "hide" },
+                { role: "hideOthers" },
+                { role: "unhide" },
+              ]
+            : []),
+          { type: "separator" },
+          { role: "quit" },
+        ],
       },
       {
         label: "Edit",
@@ -492,7 +511,7 @@ app.whenReady().then(async () => {
       {
         label: "View",
         submenu: [
-          { role: "reload" },
+          ...(process.platform === "darwin" ? [] : [{ role: "reload" }]),
           { role: "toggleDevTools" },
           { role: "resetZoom" },
           { role: "zoomIn" },
@@ -500,6 +519,7 @@ app.whenReady().then(async () => {
           { role: "togglefullscreen" },
         ],
       },
+      ...(process.platform === "darwin" ? [{ role: "windowMenu" }] : []),
     ]),
   );
   window = new BrowserWindow({
@@ -518,6 +538,12 @@ app.whenReady().then(async () => {
     },
   });
   configureWindow(window);
+  window.on("close", (event) => {
+    if (process.platform === "darwin" && !quitRequested) {
+      event.preventDefault();
+      window.hide();
+    }
+  });
   window.on("closed", () => {
     for (const item of editors.values()) item.window.destroy();
   });
@@ -539,11 +565,19 @@ app.whenReady().then(async () => {
         error.message,
       );
   }
-  app.on("activate", () => window?.show());
 });
-app.on("window-all-closed", () => app.quit());
+app.on("activate", () => {
+  if (window && !window.isDestroyed()) {
+    window.show();
+    window.focus();
+  }
+});
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin" || quitRequested) app.quit();
+});
 app.on("before-quit", (event) => {
   if (quitting) return;
+  quitRequested = true;
   // Let the renderer resolve unsaved edits before shutting down its engine.
   if (window && !window.isDestroyed()) {
     event.preventDefault();
@@ -553,13 +587,26 @@ app.on("before-quit", (event) => {
   event.preventDefault();
   quitting = true;
   socket?.close();
+  const child = backend;
+  let finished = false;
   const finish = () => {
-    backend?.kill();
-    app.quit();
+    if (finished) return;
+    finished = true;
+    if (!child || child.exitCode !== null || child.signalCode !== null)
+      return app.quit();
+    child.once("exit", () => app.quit());
+    child.kill();
+    // Allow uvicorn/mitmproxy and script workers to finish shutdown before exit.
+    setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null)
+        child.kill("SIGKILL");
+      app.quit();
+    }, 3000).unref();
   };
-  if (!backend || backend.exitCode !== null) return finish();
-  request("/sessions/close", "POST")
-    .then(() => request("/capture/stop", "POST"))
+  if (!child || child.exitCode !== null || child.signalCode !== null)
+    return finish();
+  request("/sessions/close", "POST", undefined, 1500)
+    .then(() => request("/capture/stop", "POST", undefined, 1500))
     .catch(() => {})
     .finally(finish);
   setTimeout(finish, 2500).unref();

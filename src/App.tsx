@@ -2711,6 +2711,13 @@ function Connection({
               </div>
             </>
           )}
+          {window.chls?.platform === "darwin" && (
+            <p className="platform-hint">
+              {t(
+                "На этом Mac: настройте HTTP- и HTTPS-прокси вручную в Системных настройках → Сеть → Подробнее → Прокси (127.0.0.1 и порт HTTP). Перед выходом отключите оба прокси. Для HTTPS сохраните CA, импортируйте его в Связку ключей и явно разрешите доверие SSL. Приложение не меняет системный прокси и доверие сертификатам. WireGuard предназначен для внешнего устройства; перехват всех процессов Mac не предоставляется.",
+              )}
+            </p>
+          )}
           <div className="certificate-instructions">
             <div className="certificate-instructions-heading">
               <h4>{t("Установка сертификата")}</h4>

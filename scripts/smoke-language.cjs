@@ -1,3 +1,4 @@
+delete process.env.ELECTRON_RUN_AS_NODE;
 const { _electron: electron, expect } = require("@playwright/test");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -26,7 +27,7 @@ const net = require("node:net");
       );
     }
     application = await electron.launch({
-      executablePath: require("./windows-build.cjs").executable,
+      executablePath: require("./desktop-build.cjs").executable,
       args: [],
       env: {
         ...process.env,
@@ -126,9 +127,9 @@ const net = require("node:net");
     await language().selectOption("en");
     const source =
       '# Не переводить пользовательский код\nfrom chls import Script\napp = Script("Мой код")';
-    await code().press("Control+a");
+    await code().press("ControlOrMeta+a");
     await page.keyboard.insertText(source);
-    await code().press("Control+f");
+    await code().press("ControlOrMeta+f");
     await page.getByLabel("Find in script", { exact: true }).fill("Script");
     await language().selectOption("ru");
     await expect(
@@ -137,7 +138,7 @@ const net = require("node:net");
     await expect(code()).toContainText("Не переводить пользовательский код");
     await page.getByLabel("Найти в скрипте", { exact: true }).press("Escape");
     await language().selectOption("en");
-    await code().press("Control+s");
+    await code().press("ControlOrMeta+s");
     await expect(page.locator(".mock-notice")).toContainText(
       "Saved to the library",
     );

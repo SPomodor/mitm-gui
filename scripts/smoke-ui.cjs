@@ -1,3 +1,4 @@
+delete process.env.ELECTRON_RUN_AS_NODE;
 const { _electron: electron, chromium, expect } = require("@playwright/test");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
@@ -38,8 +39,8 @@ async function unusedPort() {
     ...(packaged
       ? {
           executablePath: portable
-            ? require("./windows-build.cjs").portable
-            : require("./windows-build.cjs").executable,
+            ? require("./desktop-build.cjs").portable
+            : require("./desktop-build.cjs").executable,
           args: [],
         }
       : { args: [path.resolve(".")] }),
@@ -115,7 +116,7 @@ async function unusedPort() {
     // Hosted Windows desktops can be shorter than the requested native window.
     await page.setViewportSize({ width: 1440, height: 940 });
     async function setScriptSource(text) {
-      await page.getByLabel("Код сценария").press("Control+a");
+      await page.getByLabel("Код сценария").press("ControlOrMeta+a");
       await page.keyboard.insertText(text);
     }
 
@@ -432,7 +433,7 @@ async function unusedPort() {
       )
       .toBe(300);
     await trafficHandle.dblclick();
-    await page.keyboard.press("Control+f");
+    await page.keyboard.press("ControlOrMeta+f");
     await expect(
       page.getByLabel("Найти в теле", { exact: true }),
     ).toBeFocused();
@@ -594,7 +595,9 @@ async function unusedPort() {
       "Enable feature flag",
     );
     await editor.getByLabel("Название", { exact: true }).fill("");
-    await editor.getByLabel("Название", { exact: true }).press("Control+V");
+    await editor
+      .getByLabel("Название", { exact: true })
+      .press("ControlOrMeta+V");
     await expect(editor.getByLabel("Название", { exact: true })).toHaveValue(
       url.replace("127.0.0.1", "api.example.test"),
     );
@@ -740,7 +743,7 @@ async function unusedPort() {
         await page.getByRole("button", { name: "Pretty", exact: true }).click();
         await expect(page.locator(".virtual-code-row").first()).toBeVisible();
         if (endpoint === "/large-json") {
-          await page.keyboard.press("Control+f");
+          await page.keyboard.press("ControlOrMeta+f");
           await page
             .getByLabel("Найти в теле", { exact: true })
             .fill("TAIL-SENTINEL");
@@ -783,7 +786,7 @@ async function unusedPort() {
             .press("Escape");
         }
         if (endpoint === "/large-string") {
-          await page.keyboard.press("Control+f");
+          await page.keyboard.press("ControlOrMeta+f");
           await page
             .getByLabel("Найти в теле", { exact: true })
             .fill("x".repeat(200));
@@ -893,7 +896,7 @@ async function unusedPort() {
         secondEditor.waitForEvent("close"),
         secondEditor
           .getByLabel("Название", { exact: true })
-          .press("Control+s")
+          .press("ControlOrMeta+s")
           .catch((error) => {
             if (!secondEditor.isClosed()) throw error;
           }),
@@ -1039,7 +1042,9 @@ async function unusedPort() {
           .evaluate((el) => Math.round(el.getBoundingClientRect().width)),
       )
       .toBe(Math.round(editorWidth - 40));
-    await page.getByLabel("Код сценария").press("Control+Home");
+    await page
+      .getByLabel("Код сценария")
+      .press(process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home");
     await expect(page.getByLabel("Код сценария")).toContainText(
       "from chls import Script, Scenario, response",
     );
@@ -1118,7 +1123,9 @@ async function unusedPort() {
       .getByRole("navigation")
       .getByRole("button", { name: /^Сценарии/ })
       .click();
-    await page.getByLabel("Код сценария").press("Control+Home");
+    await page
+      .getByLabel("Код сценария")
+      .press(process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home");
     await expect(page.getByLabel("Код сценария")).toContainText(
       "from chls import Script, Scenario, response",
     );
@@ -1201,7 +1208,7 @@ def stop(request, ctx):
     await page.locator(".flow-row").first().click();
     await page.getByRole("button", { name: "Request", exact: true }).click();
     await page.getByRole("button", { name: "Headers", exact: true }).click();
-    await page.keyboard.press("Control+f");
+    await page.keyboard.press("ControlOrMeta+f");
     await expect(
       page.getByLabel("Найти в теле", { exact: true }),
     ).toBeFocused();
@@ -1446,7 +1453,11 @@ def stop(request, ctx):
           .getByRole("button", { name: "Новое правило", exact: true })
           .click(),
       );
-      await application.evaluate(({ BrowserWindow }) => {
+      await application.evaluate(({ app, BrowserWindow }) => {
+        if (process.platform === "darwin") {
+          app.quit();
+          return;
+        }
         BrowserWindow.getAllWindows()
           .find(
             (target) => !target.webContents.getURL().endsWith("#rule-editor"),
@@ -1493,8 +1504,8 @@ def stop(request, ctx):
                 "offscreen and cross-fragment search with bounded DOM",
               ]
             : []),
-          "Ctrl+F in response and request JSON, highlights, next/previous, no match, Escape",
-          "Ctrl+F opens body search from Headers",
+          "Cmd/Ctrl+F in response and request JSON, highlights, next/previous, no match, Escape",
+          "Cmd/Ctrl+F opens body search from Headers",
           "host focus filters display without dropping capture",
           "recording pause keeps proxy working and does not save requests",
           "SSL toggle",
@@ -1539,7 +1550,7 @@ def stop(request, ctx):
           "invalid mock keeps active revision",
           "disabled mock restores normal proxy",
           ...(!portable
-            ? ["closing main window also closes editor and exits app"]
+            ? ["quitting closes editors, archives session and exits app"]
             : []),
         ],
         rendererErrors: errors,

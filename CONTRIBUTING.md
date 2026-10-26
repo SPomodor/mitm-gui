@@ -55,15 +55,15 @@ $env:CHLS_TEST_ENGINE = (Resolve-Path runtime/mitm-gui-engine/mitm-gui-engine.ex
 
 Smoke tests create isolated profiles; they do not modify the user's normal capture data. `CHLS_SMOKE_BUILD_DIR` overrides the default `release` directory.
 
-## macOS port status
+## macOS native builds
 
-The launcher and engine build script have platform-specific executable paths and native dependency collection. To experiment **on a Mac**, run setup and `npm run package:mac`. This is an unverified port, not a supported release. PyInstaller must freeze the backend on the target OS; a Windows-built backend cannot be reused on macOS.
+See [macOS build, installation and signing](docs/macos.md) ([Русский](docs/macos.ru.md)) and the [validation record](docs/macos-validation.md). Separate arm64/x64 engines must be frozen on a Mac of the same architecture. `npm run package:mac` produces DMG and ZIP; the before-pack hook rejects a mismatched engine. Local verification currently covers Apple Silicon on macOS 15.8.1; Intel execution is pending CI. The configured deployment floor of macOS 14 has not been separately tested.
 
-Before shipping, validate arm64/x64 native dependencies, proxy/WireGuard capture, CA trust, multiprocessing scripts, menu/keyboard behavior and lifecycle on real Macs. Current macOS configuration creates unsigned DMG/ZIP files. Developer ID signing and notarization need separate Apple credentials and configuration; they are not included in Windows CI.
+Unsigned builds receive an ad-hoc integrity signature. Set `CSC_LINK`/`CSC_KEY_PASSWORD` for Developer ID signing and `MITM_GUI_NOTARIZE=true` plus the Apple credentials documented in the guide for notarization. Do not commit credentials. Native menu and Dock behavior preserve the macOS convention: close hides the main window; Quit terminates capture.
 
 ## GitHub Actions
 
-`.github/workflows/build.yml` runs on every branch push, pull request and manual dispatch. It uses Windows, Node 24 and Python 3.13, executes source and frozen-backend tests, packages the app, runs desktop smoke checks and uploads the EXE with a SHA-256 checksum.
+`.github/workflows/build.yml` runs on every branch push, pull request and manual dispatch. It uses Windows x64/ARM64 and macOS arm64/x64 runners, Node 24 and Python 3.13. It executes source and frozen-backend tests, packages each app, runs desktop smoke checks and uploads EXE or DMG/ZIP artifacts with architecture-specific SHA-256 checksums. macOS runners use native Python of the same architecture as Electron; Windows ARM64 keeps its x64 engine.
 
 Action references are pinned to verified commit SHAs. Ordinary builds have `contents: read`; only the tagged release job receives `contents: write`. Pull requests do not publish releases. No personal token is needed.
 
@@ -81,7 +81,7 @@ git tag v0.9.1
 git push origin v0.9.1
 ```
 
-The tag must equal `v` plus `package.json.version`. A tag build repeats all checks, then creates a GitHub Release and uploads the portable EXE and `SHA256SUMS.txt`. A normal push only produces Actions artifacts. The workflow explicitly disables electron-builder's implicit publication.
+The tag must equal `v` plus `package.json.version`. A tag build repeats all checks, then creates a GitHub Release and uploads Windows EXEs, macOS DMG/ZIP files and per-platform/architecture SHA256SUMS files after both operating systems pass. A normal push only produces Actions artifacts. The workflow explicitly disables electron-builder's implicit publication.
 
 Do not upload profile data, tokens, WireGuard configurations, CA private keys or real captures. Use synthetic `example.com` fixtures for bug reports and tests.
 

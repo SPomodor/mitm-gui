@@ -1,3 +1,4 @@
+delete process.env.ELECTRON_RUN_AS_NODE;
 const { _electron: electron, expect } = require("@playwright/test");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -18,7 +19,7 @@ const http = require("node:http");
   );
   const launch = (profile = data) =>
     electron.launch({
-      executablePath: require("./windows-build.cjs").executable,
+      executablePath: require("./desktop-build.cjs").executable,
       args: [],
       env: {
         ...process.env,
@@ -83,7 +84,7 @@ const http = require("node:http");
     await page
       .getByLabel("Папка JSON", { exact: true })
       .fill("C:\\test-fixtures");
-    await name().press("Control+s");
+    await name().press("ControlOrMeta+s");
     await expect
       .poll(async () => (await library()).items[1].name)
       .toBe("Мой пример");

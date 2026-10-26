@@ -14,6 +14,7 @@ import {
   history,
   historyKeymap,
   indentWithTab,
+  toggleTabFocusMode,
 } from "@codemirror/commands";
 import { python } from "@codemirror/lang-python";
 import {
@@ -174,6 +175,7 @@ export default function ScriptEditor({
           syntaxHighlighting(pythonColors),
           search({ top: true, literal: true, createPanel: searchPanel }),
           keymap.of([
+            { key: "Ctrl-m", run: toggleTabFocusMode },
             indentWithTab,
             ...searchKeymap,
             ...defaultKeymap,

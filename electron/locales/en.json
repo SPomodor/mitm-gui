@@ -455,5 +455,6 @@
   "Скрипт превысил время выполнения ({0} с). Примените его заново.": "Script execution exceeded {0} seconds. Apply it again.",
   "Сценарий применён и активен.": "Script applied and active.",
   "Сценарий применён. Нажмите «Включить сценарий».": "Script applied. Click “Enable script”.",
-  "Авто": "Auto"
+  "Авто": "Auto",
+  "На этом Mac: настройте HTTP- и HTTPS-прокси вручную в Системных настройках → Сеть → Подробнее → Прокси (127.0.0.1 и порт HTTP). Перед выходом отключите оба прокси. Для HTTPS сохраните CA, импортируйте его в Связку ключей и явно разрешите доверие SSL. Приложение не меняет системный прокси и доверие сертификатам. WireGuard предназначен для внешнего устройства; перехват всех процессов Mac не предоставляется.": "On this Mac: configure HTTP and HTTPS proxies manually in System Settings → Network → Details → Proxies (127.0.0.1 and the HTTP port). Disable both proxies before quitting. For HTTPS, save the CA, import it into Keychain Access and explicitly enable SSL trust. The app does not change system proxies or certificate trust. WireGuard is for an external device; capture of all Mac processes is not provided."
 }

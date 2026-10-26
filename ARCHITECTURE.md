@@ -83,4 +83,4 @@ The public name is **mitm gui**, by SPomodor. CHLS is the former name. Existing 
 
 ## Distribution
 
-Node scripts bootstrap a local Python environment, compile the frontend, freeze the backend with PyInstaller and package it with electron-builder. Windows CI runs both source and frozen-backend tests plus packaged GUI smoke tests. Tags matching the package version publish release assets after those checks pass. macOS paths/build configuration exist for porting but are not verified by Windows CI.
+Node scripts bootstrap a local Python environment, compile the frontend, freeze the backend with PyInstaller and package it with electron-builder. Windows CI runs both source and frozen-backend tests plus packaged GUI smoke tests. Tags matching the package version publish release assets after those checks pass. macOS CI builds native arm64 and x64 engines on matching Mac runners, checks Mach-O architectures and tests the packaged application before DMG/ZIP generation. The local verification record and signing boundaries are in [docs/macos.md](docs/macos.md). On macOS, closing the main window hides it while Quit owns engine termination.

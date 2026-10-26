@@ -1069,3 +1069,7 @@ aa6b2af  format truncated JSON previews
 ## Windows ARM64 (гибридная сборка)
 
 С версии 0.9.1 доступен нативный интерфейс ARM64 с движком x64 под эмуляцией Windows 11. Это не полностью нативная ARM64-сборка. Windows x86/32-bit, ARM32 и Windows 10 ARM не поддерживаются. Выберите подходящий EXE в Releases.
+
+## macOS
+
+См. [руководство macOS](macos.ru.md): установка DMG/ZIP, ограничения Gatekeeper, ручная настройка и восстановление HTTP/HTTPS-прокси, явное доверие CA в Связке ключей, WireGuard и хранение профиля в `~/Library/Application Support/mitm-gui`. Локально проверена Apple Silicon/macOS 15.8.1; статус Intel и остальных версий — в [отчёте](macos-validation.md). Закрытие окна скрывает приложение; Cmd+Q завершает перехват. Используйте Cmd+K/F/S для поиска и сохранения.

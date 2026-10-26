@@ -15,7 +15,7 @@
     "test:ui": "node --test tests/script-library.test.cjs tests/i18n.test.mjs",
     "test:smoke": "node scripts/smoke-ui.cjs --packaged",
     "test:language": "node scripts/smoke-language.cjs",
-    "test:architecture": "node scripts/check-windows-package.cjs"
+    "test:architecture": "node scripts/check-desktop-package.cjs"
   },
   "keywords": [],
   "author": "SPomodor",
@@ -59,10 +59,17 @@
         "zip"
       ],
       "category": "public.app-category.developer-tools",
-      "identity": null,
-      "artifactName": "mitm-gui-${version}-mac-${arch}.${ext}"
+      "artifactName": "mitm-gui-${version}-mac-${arch}.${ext}",
+      "minimumSystemVersion": "14.0",
+      "hardenedRuntime": true,
+      "entitlements": "resources/macos.entitlements.plist",
+      "entitlementsInherit": "resources/macos.entitlements.plist",
+      "notarize": false
     },
-    "copyright": "Copyright © 2026 SPomodor"
+    "copyright": "Copyright \u00a9 2026 SPomodor",
+    "beforePack": "scripts/before-pack.cjs",
+    "afterSign": "scripts/notarize.cjs",
+    "afterPack": "scripts/sign-unsigned-mac.cjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

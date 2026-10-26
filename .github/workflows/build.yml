@@ -115,17 +115,113 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  macos:
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    env:
+      MITM_GUI_TARGET_ARCH: ${{ matrix.arch }}
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          architecture: ${{ matrix.arch }}
+          cache: npm
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+          architecture: ${{ matrix.arch }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Install native dependencies
+        run: |
+          node -e 'if (process.arch !== process.env.MITM_GUI_TARGET_ARCH) throw Error("Runner architecture mismatch")'
+          npm run setup
+      - name: Check tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: node -e "if (process.env.GITHUB_REF_NAME !== 'v' + require('./package.json').version) throw Error('Tag must match package.json version')"
+      - name: Build and test sources
+        run: |
+          npm run build
+          npm test -- --junitxml=build/pytest.xml
+          npm run test:format
+          npm run test:ui
+      - name: Build and test native engine
+        run: |
+          npm run build:engine
+          CHLS_TEST_ENGINE="$PWD/runtime/mitm-gui-engine/mitm-gui-engine" .venv/bin/python -m pytest tests/test_integration.py -q
+      - name: Package desktop app
+        env:
+          # Secrets are absent on forks; unsigned builds remain usable for testing.
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MITM_GUI_NOTARIZE: ${{ vars.MITM_GUI_NOTARIZE }}
+        run: npx electron-builder --mac --${{ matrix.arch }} --dir --publish never
+      - name: Verify architectures and packaged behavior
+        run: |
+          npm run test:architecture
+          node scripts/ci-check.cjs scripts/smoke-ui.cjs --packaged
+          node scripts/ci-check.cjs scripts/smoke-language.cjs
+          node scripts/ci-check.cjs scripts/smoke-script-editor.cjs --packaged
+          node scripts/ci-check.cjs scripts/smoke-macos-lifecycle.cjs
+      - name: Build DMG and ZIP
+        run: |
+          if [ "$MITM_GUI_TARGET_ARCH" = arm64 ]; then unpacked=mac-arm64; else unpacked=mac; fi
+          npx electron-builder --mac dmg zip --${{ matrix.arch }} --prepackaged "release/$unpacked/mitm gui.app" --publish never
+          cd release
+          shasum -a 256 mitm-gui-*-mac-${{ matrix.arch }}.dmg mitm-gui-*-mac-${{ matrix.arch }}.zip > SHA256SUMS-mac-${{ matrix.arch }}.txt
+      - name: Upload application
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: mitm-gui-macos-${{ matrix.arch }}
+          path: |
+            release/mitm-gui-*-mac-${{ matrix.arch }}.dmg
+            release/mitm-gui-*-mac-${{ matrix.arch }}.zip
+            release/SHA256SUMS-mac-${{ matrix.arch }}.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: macos-${{ matrix.arch }}-test-diagnostics
+          path: |
+            build/**/*.png
+            build/**/*.log
+            build/pytest.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
   release:
     name: Publish tagged release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: windows
+    needs: [windows, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
-          pattern: mitm-gui-windows-*
+          pattern: mitm-gui-*
           merge-multiple: true
           path: artifacts
       - name: Publish GitHub Release
@@ -136,6 +232,10 @@ jobs:
         run: |
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             cat > release-notes.md <<'NOTES'
+          ## macOS builds
+
+          Separate arm64 (Apple Silicon) and x64 (Intel) DMG/ZIP builds include a native engine. Each macOS runner executes source, frozen-engine and packaged desktop tests. Without Developer ID credentials these builds are unsigned and not notarized; see docs/macos.md for Gatekeeper and manual proxy/CA setup. Verify the architecture-specific SHA256SUMS file.
+
           ## Windows builds
 
           - **x64**: x64 interface and network engine.

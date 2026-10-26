@@ -156,6 +156,7 @@ export interface ScriptLibraryData {
 declare global {
   interface Window {
     chls: {
+      platform: string;
       language: { preference: "auto" | "ru" | "en"; systemLocale: string };
       setLanguage: (preference: "auto" | "ru" | "en") => Promise<void>;
       onLanguage: (
