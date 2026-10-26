@@ -162,7 +162,7 @@ jobs:
       - name: Test backend with bounded diagnostics
         env:
           MITM_GUI_CI_TIMEOUT_MS: "180000"
-        run: node scripts/ci-check.cjs scripts/test-backend.cjs -vv -o faulthandler_timeout=60 --junitxml=build/pytest.xml
+        run: node scripts/ci-check.cjs scripts/test-backend.cjs -x -vv -o faulthandler_timeout=60 --junitxml=build/pytest.xml
       - name: Test formatting and UI components
         run: |
           npm run test:format
