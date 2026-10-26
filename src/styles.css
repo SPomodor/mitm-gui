@@ -2152,9 +2152,81 @@ button .spin {
 .mocks-page .page-heading {
   padding: 16px 20px 12px;
 }
+.script-library {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.script-library-picker,
+.script-library-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.script-library input,
+.script-library select {
+  height: 30px;
+  padding: 4px 8px;
+  font-size: 12px;
+  min-width: 0;
+}
+.script-library-picker input {
+  width: 132px;
+}
+.script-library-picker select,
+.script-library-actions input {
+  flex: 1;
+  width: 0;
+}
+.script-library .button {
+  font-size: 12px;
+  padding: 4px 8px;
+  flex-shrink: 0;
+}
+.script-save-state {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.script-confirm {
+  width: min(460px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 13px;
+}
+.script-confirm h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+.script-confirm p {
+  color: var(--muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.script-confirm > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+@media (max-width: 1150px) {
+  .script-library-picker input {
+    width: 100px;
+  }
+  .script-save-state {
+    display: none;
+  }
+}
 .mock-stages {
   padding: 12px 24px;
   border-bottom: 1px solid var(--line);
+}
+.mock-stages > .mock-help {
+  margin: 8px 0 0;
 }
 .mock-state {
   display: flex;
@@ -2234,58 +2306,153 @@ button .spin {
   font-size: 12px;
   padding: 4px 7px;
 }
-.mock-settings {
-  padding: 12px 14px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+.mock-folder {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.mock-folder > span {
+  flex-shrink: 0;
+}
+.mock-folder .file-input {
+  flex: 1;
+  min-width: 0;
+}
+.mock-folder input {
+  min-width: 0;
+  font-size: 12px;
+}
+.script-editor {
+  flex: 1;
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--input);
+}
+.script-editor-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  padding: 4px 12px;
+  min-height: 28px;
+  color: var(--muted);
+  font-size: 11px;
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
-.mock-settings label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--muted);
-  min-width: 0;
-}
-.mock-settings input {
-  width: 100%;
-  min-width: 0;
-  font-size: 12px;
-}
-.mock-all-hosts {
-  grid-column: 1 / -1;
-  flex-wrap: wrap;
-}
-.mock-all-hosts > span {
-  font-size: 12px;
-}
-.mock-scope {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: 130px 1fr;
-  gap: 12px;
+.script-editor-tools button {
+  display: inline-flex;
   align-items: center;
+  gap: 5px;
+  font-size: 11px;
 }
-.mock-code {
+.script-editor-content {
   flex: 1;
-  min-height: 60px;
-  width: 100%;
-  resize: none;
-  border: 0;
-  border-radius: 0;
-  padding: 14px;
+  min-height: 0;
+  overflow: hidden;
+}
+.script-editor .cm-editor {
+  height: 100%;
   background: var(--input);
+  color: var(--text);
+}
+.script-editor .cm-editor.cm-focused {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.script-editor .cm-scroller {
+  overflow: auto;
   font:
     12px/1.7 Consolas,
     monospace;
-  white-space: pre;
-  tab-size: 2;
 }
-.mock-code:focus-visible {
-  outline-offset: -2px;
+.script-editor .cm-content {
+  padding: 10px 0;
+  caret-color: var(--text);
+}
+.script-editor .cm-line {
+  padding: 0 12px 0 8px;
+}
+.script-editor .cm-gutters {
+  background: var(--input);
+  color: var(--faint);
+  border-right: 1px solid var(--line);
+}
+.script-editor .cm-gutterElement {
+  padding-left: 8px;
+}
+.script-editor .cm-cursor {
+  border-left-color: var(--text);
+}
+.script-editor .cm-selectionBackground,
+.script-editor .cm-focused .cm-selectionBackground {
+  background: var(--selected);
+}
+.script-editor .cm-panels {
+  background: var(--panel);
+  color: var(--text);
+}
+.script-editor .cm-panels-top {
+  border-bottom: 1px solid var(--line);
+}
+.script-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+}
+.script-search input {
+  flex: 1;
+  width: 0;
+  min-width: 60px;
+  padding: 4px 7px;
+  font-size: 12px;
+}
+.script-search .icon-button {
+  width: 25px;
+  height: 25px;
+  flex-shrink: 0;
+}
+.script-search-count {
+  min-width: 42px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+.script-editor .cm-searchMatch {
+  background: var(--selected);
+  outline: 1px solid var(--accent-bg);
+}
+.script-editor .cm-searchMatch-selected {
+  background: var(--accent-bg);
+  outline: 1px solid var(--accent);
+}
+.script-editor .cm-matchingBracket {
+  background: var(--selected);
+  outline: 1px solid var(--line);
+}
+.script-token-keyword {
+  color: var(--code-key);
+}
+.script-token-string {
+  color: var(--code-string);
+}
+.script-token-value {
+  color: var(--code-value);
+}
+.script-token-comment {
+  color: var(--muted);
+  font-style: italic;
+}
+.script-token-function {
+  color: var(--accent);
 }
 .mock-notice {
   padding: 8px 14px;

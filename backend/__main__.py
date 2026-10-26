@@ -23,7 +23,9 @@ from .rules import Rule, apply_rules
 from .store import Store
 from .har import export_har
 from .hosts import display_url, flow_host
-from .mocks import MockModule, MockError, compile_scenario, validate_scope
+from .mocks import MockError
+from .scripts import ScriptModule, ScriptRunner
+from .script_migration import convert_legacy
 from .tunnels import TunnelCapture, OpaqueNextLayer
 from .records import begin_recording, can_record
 from .ssl_policy import normalize_hosts, should_decrypt
@@ -57,7 +59,8 @@ class Engine:
     def __init__(self):
         self.store = Store(ROOT)
         self.rules = []
-        self.mocks = MockModule(ROOT)
+        self.mocks = ScriptModule(ROOT)
+        self.script_lock = asyncio.Lock()
         self.config = CaptureConfig(wireguard=True)
         self.clients = set()
         self.pending = {}
@@ -166,22 +169,28 @@ class CaptureAddon:
     def can_record(self, flow):
         return can_record(self.engine, flow)
 
-    def request(self, flow):
+    async def request(self, flow):
         if self.can_record(flow):
             flow.metadata['original_request'] = snapshot(self.engine, flow, flow.request, 'original_request')
         # Each flow uses an immutable rule revision for request and response.
         flow.metadata['rule_revision'] = list(self.engine.rules)
-        if self.engine.mocks.handle(flow):
+        flow.metadata.setdefault('rule_location', {'host': flow_host(flow), 'destination_host': flow.request.host,
+                                                  'method': flow.request.method, 'path': flow.request.path})
+        handled = await self.engine.mocks.handle(flow)
+        if flow.metadata.get('_script_revision') is not None:
             self.engine.publish({'type': 'mocks'})
-        else:
+        if not handled:
             apply_rules(flow, flow.metadata['rule_revision'], 'request', MAX_BODY)
         self.record(flow)
 
-    def response(self, flow):
+    async def response(self, flow):
         if self.can_record(flow):
             flow.metadata['original_response'] = snapshot(self.engine, flow, flow.response, 'original_response')
         if not flow.metadata.get('mock'):
             apply_rules(flow, flow.metadata.get('rule_revision', self.engine.rules), 'response', MAX_BODY)
+        await self.engine.mocks.handle(flow, 'response')
+        if flow.metadata.get('_script_revision') is not None:
+            self.engine.publish({'type': 'mocks'})
         self.record(flow)
 
     def error(self, flow):
@@ -238,6 +247,7 @@ async def lifespan(app):
     engine.master.shutdown()
     await master_task
     broadcast_task.cancel()
+    await asyncio.to_thread(engine.mocks.close)
     engine.store.archive_sessions()
     engine.store.db.close()
 
@@ -382,11 +392,9 @@ async def rules():
 
 
 class MockDocument(BaseModel):
+    model_config = {'extra': 'forbid'}
     source: str = Field(max_length=200_000)
     folder: str = Field(default='', max_length=4096)
-    hosts: list[str] = Field(max_length=20)
-    scope: str = Field(default='/driver/', max_length=1024)
-    strict: bool = True
 
 
 @app.get('/mocks')
@@ -394,60 +402,68 @@ async def mock_status():
     return engine.mocks.status()
 
 
+@app.post('/mocks/convert')
+async def mock_convert(document: MockDocument):
+    try:
+        source = await asyncio.to_thread(convert_legacy, document.source, document.folder)
+        return {'source': source}
+    except (ValueError, OSError) as error:
+        raise HTTPException(422, str(error))
+
+
 @app.post('/mocks/validate')
 @app.put('/mocks')
 async def mock_document(document: MockDocument, request: Request):
+    program = None
     try:
         data = document.model_dump()
-        data['hosts'] = validate_scope(data['hosts'], data['scope'])
-        # Compilation and fixture IO run off the capture loop. Installation is atomic.
-        scenario = await asyncio.to_thread(compile_scenario, data['source'], data['folder'])
+        program = await asyncio.to_thread(ScriptRunner, data['source'], data['folder'])
         if request.method == 'PUT':
-            engine.mocks.install(scenario, data)
+            async with engine.script_lock:
+                await asyncio.to_thread(engine.mocks.install, program, data)
+            program = None
             engine.publish({'type': 'mocks'})
             return engine.mocks.status()
-        return {'name': scenario.name, 'stages': list(scenario.stages), 'initial': scenario.initial}
+        return program.info
     except (MockError, OSError) as error:
         raise HTTPException(422, str(error))
+    finally:
+        if program:
+            await asyncio.to_thread(program.close)
 
 
 class MockControl(BaseModel):
     action: str
     stage: str = ''
-    mode: str = 'free'
 
 
 @app.post('/mocks/control')
 async def mock_control(command: MockControl):
-    module = engine.mocks
-    if command.action not in ('enable', 'disable', 'stage', 'reset', 'clear', 'mode'):
-        raise HTTPException(422, 'Неизвестная команда')
-    if command.action in ('enable', 'stage', 'reset') and not module.scenario:
-        raise HTTPException(409, 'Сначала примените корректный сценарий')
-    if command.action == 'stage':
-        if module.mode != 'free':
-            raise HTTPException(409, 'Для ручного выбора этапа включите «Свободный» режим')
-        if command.stage not in module.scenario.stages:
-            raise HTTPException(422, 'Этап не найден')
-        module.stage = command.stage
-        module.recent_triggers.clear()
-    elif command.action == 'mode':
-        try:
-            module.set_mode(command.mode)
-        except (MockError, OSError) as error:
-            raise HTTPException(422, str(error))
-    elif command.action == 'enable':
-        module.enabled = True
-    elif command.action == 'disable':
-        module.enabled = False
-    elif command.action == 'reset':
-        module.stage = module.scenario.initial
-        module.recent_triggers.clear()
-        module.logs.clear()
-    else:
-        module.logs.clear()
-    engine.publish({'type': 'mocks'})
-    return module.status()
+    async with engine.script_lock:
+        module = engine.mocks
+        if command.action not in ('enable', 'disable', 'stage', 'reset', 'clear'):
+            raise HTTPException(422, 'Неизвестная команда')
+        if command.action in ('enable', 'stage', 'reset') and not module.program:
+            raise HTTPException(409, 'Сначала примените корректный сценарий')
+        if command.action == 'stage':
+            if command.stage not in module.program.info['stages']:
+                raise HTTPException(422, 'Этап не найден')
+            await asyncio.to_thread(module.program.reset, command.stage)
+        elif command.action == 'enable':
+            try:
+                await asyncio.to_thread(module.program.resume)
+            except MockError as error:
+                raise HTTPException(409, str(error))
+            module.enabled = True
+        elif command.action == 'disable':
+            module.enabled = False
+        elif command.action == 'reset':
+            await asyncio.to_thread(module.program.reset)
+            module.logs.clear()
+        else:
+            module.logs.clear()
+        engine.publish({'type': 'mocks'})
+        return module.status()
 
 
 @app.put('/rules')
@@ -602,4 +618,6 @@ def main():
 
 
 if __name__ == '__main__':
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()

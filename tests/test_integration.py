@@ -324,25 +324,32 @@ def test_occupied_port_on_autostart_keeps_management_api_available(tmp_path):
 def test_mock_module_real_http_tls_stage_priority_and_failed_apply(environment):
     client, port, _, upstream, root = environment
     previous = client.get('/rules').json()
-    source = '''модуль "Интеграция"
-начало "Собирается"
-путь info = "/driver/order/info"
-общие:
- /driver/state -> 200 {"active":true}
-этап "Собирается":
- GET info -> 200 "mock-order.json"
-этап "Завершён":
- GET info -> 200 {"status":"completed"}
- /driver/state -> 200 {"active":false}
+    source = '''from chls import Script, Scenario, response
+app = Script("Интеграция", hosts=["127.0.0.1", "offline.invalid"], path_prefix="/driver/", unmatched="block")
+order = Scenario("order", initial="Собирается")
+app.use(order)
+@app.get("/driver/state")
+def shared(request, ctx):
+    return response(200, json={"active": True})
+@order.get("/driver/order/info", state="Собирается")
+def collecting(request, ctx):
+    return response(200, file="mock-order.json")
+@order.get("/driver/order/info", state="Завершён")
+def complete(request, ctx):
+    return response(200, json={"status": "completed"})
+@order.get("/driver/state", state="Завершён")
+def completed_state(request, ctx):
+    return response(200, json={"active": False})
 '''
     (root / 'mock-order.json').write_text('{"status":"assembling"}', 'utf-8')
-    document = dict(source=source, folder=str(root), hosts=['127.0.0.1', 'offline.invalid'], scope='/driver/', strict=True)
+    document = dict(source=source, folder=str(root))
     try:
         assert client.post('/capture/start', json={'port': port, 'lan': False}).status_code == 200
         assert client.get('/mocks').json()['enabled'] is False
-        missing_hosts = client.post('/mocks/validate', json={**document, 'hosts': []})
-        assert missing_hosts.status_code == 422
-        assert 'Все домены' in missing_hosts.json()['detail']
+        invalid_hosts = client.post('/mocks/validate', json={**document, 'source': source + '\napp.hosts = [\"https://invalid/path\"]'})
+        assert invalid_hosts.status_code == 422
+        assert 'домен' in invalid_hosts.json()['detail']
+        assert client.post('/mocks/validate', json={**document, 'hosts': ['*']}).status_code == 422
         assert client.post('/mocks/validate', json=document).status_code == 200
         assert client.get('/mocks').json()['stages'] == []
         assert client.put('/mocks', json=document).status_code == 200
@@ -358,7 +365,7 @@ def test_mock_module_real_http_tls_stage_priority_and_failed_apply(environment):
             assert proxy.get(upstream + '/driver/missing').status_code == 501
             assert proxy.get(upstream + '/outside').status_code == 418
             failed = client.put('/mocks', json={**document, 'source': source.replace('mock-order.json', 'missing.json')})
-            assert failed.status_code == 422 and 'Строка' in failed.json()['detail']
+            assert failed.status_code == 422 and 'missing.json' in failed.json()['detail']
             assert proxy.get(upstream + '/driver/order/info').json()['status'] == 'assembling'
             assert client.post('/mocks/control', json={'action': 'stage', 'stage': 'Завершён'}).status_code == 200
             assert proxy.get(upstream + '/driver/order/info').json()['status'] == 'completed'
@@ -373,7 +380,7 @@ def test_mock_module_real_http_tls_stage_priority_and_failed_apply(environment):
             assert client.post('/mocks/control', json={'action': 'reset'}).json()['stage'] == 'Собирается'
             assert client.post('/mocks/control', json={'action': 'disable'}).status_code == 200
             assert proxy.get(upstream + '/driver/order/info').status_code == 418
-            assert client.put('/mocks', json={**document, 'hosts': ['*']}).status_code == 200
+            assert client.put('/mocks', json={**document, 'source': source + '\napp.hosts = [\"*\"]'}).status_code == 200
             assert client.post('/mocks/control', json={'action': 'enable'}).status_code == 200
             assert proxy.get('http://new-domain.invalid/driver/order/info').json()['status'] == 'assembling'
             assert proxy.get('http://other-domain.invalid/driver/order/info').json()['status'] == 'assembling'
@@ -383,58 +390,124 @@ def test_mock_module_real_http_tls_stage_priority_and_failed_apply(environment):
         client.put('/rules', json=previous)
 
 
-def test_trigger_modes_real_requests_retry_guard_and_reset(environment):
+def test_python_transitions_explicit_responses_and_repeated_requests(environment):
     client, port, _, upstream, _ = environment
-    arrive = '/driver/v1/cargo-pro-api/grocery/v1/order/arrive-at-point'
-    confirm = '/driver/v1/cargo-pro-api/grocery/v1/order/exchange/confirm'
-    source = f'''модуль "Переходы"
-путь arrive = "{arrive}"
-путь confirm = "{confirm}"
-общие:
- POST confirm -> 500 {{"ignored":true}}
-этап "start":
- GET /driver/info -> 200 {{"stage":"start"}}
- при POST arrive -> следующий
-этап "arrived":
- GET /driver/info -> 200 {{"stage":"arrived"}}
- при POST confirm -> следующий
-этап "confirmed":
- GET /driver/info -> 200 {{"stage":"confirmed"}}
- при POST confirm -> "complete"
-этап "complete":
- GET /driver/info -> 200 {{"stage":"complete"}}
+    source = '''from chls import Script, Scenario, response
+app = Script("Переходы", path_prefix="/driver/")
+order = Scenario("order", initial="start")
+app.use(order)
+@app.get("/driver/info")
+def info(request, ctx):
+    return response(200, json={"stage": ctx.stage, "count": ctx.state.get("count", 0)})
+@order.post("/driver/confirm", state="start")
+def start(request, ctx):
+    ctx.goto("confirmed")
+    return response(201, json={"accepted": True})
+@order.post("/driver/confirm", state="confirmed")
+def confirm(request, ctx):
+    ctx.state["count"] = ctx.state.get("count", 0) + 1
+    return response(409, json={"repeat": True})
 '''
-    document = dict(source=source, folder='', hosts=['*'], scope='/driver/', strict=False)
+    document = dict(source=source, folder='')
     try:
-        client.post('/mocks/control', json={'action': 'mode', 'mode': 'free'})
         assert client.put('/mocks', json=document).status_code == 200
         assert client.post('/mocks/control', json={'action': 'enable'}).status_code == 200
         with httpx.Client(proxy=f'http://127.0.0.1:{port}', trust_env=False) as proxy:
-            assert proxy.post(upstream + arrive).status_code == 200
-            assert client.get('/mocks').json()['stage'] == 'start'
-            assert client.post('/mocks/control', json={'action': 'stage', 'stage': 'confirmed'}).status_code == 200
-            assert client.post('/mocks/control', json={'action': 'reset'}).json()['stage'] == 'start'
-            assert client.post('/mocks/control', json={'action': 'mode', 'mode': 'scenario'}).json()['mode'] == 'scenario'
-            assert client.post('/mocks/control', json={'action': 'stage', 'stage': 'complete'}).status_code == 409
-            assert proxy.post(upstream + arrive).status_code == 200
-            assert proxy.get(upstream + '/driver/info?poll=1').json()['stage'] == 'arrived'
-            acknowledged = proxy.post(upstream + confirm, headers={'Idempotency-Key': 'one'})
-            assert acknowledged.status_code == 200 and acknowledged.content == b''
-            assert client.get('/mocks').json()['stage'] == 'confirmed'
-            proxy.post(upstream + confirm, headers={'Idempotency-Key': 'one'})
-            assert client.get('/mocks').json()['stage'] == 'confirmed'
-            proxy.post(upstream + confirm, headers={'Idempotency-Key': 'two'})
-            assert proxy.get(upstream + '/driver/info').json()['stage'] == 'complete'
-            assert any(log.get('transition', {}).get('destination') == 'complete' for log in client.get('/mocks').json()['logs'] if log.get('transition'))
-            assert client.post('/mocks/control', json={'action': 'reset'}).json()['stage'] == 'start'
-            # Reset clears replay guards, so the same request can start a new run.
-            assert proxy.post(upstream + arrive).status_code == 200
-            assert client.get('/mocks').json()['stage'] == 'arrived'
-            assert client.post('/mocks/control', json={'action': 'mode', 'mode': 'invalid'}).status_code == 422
-            assert client.get('/mocks').json()['mode'] == 'scenario'
+            assert proxy.post(upstream + '/driver/confirm').status_code == 201
+            for _ in range(2):
+                assert proxy.post(upstream + '/driver/confirm', headers={'Idempotency-Key': 'same'}).status_code == 409
+            assert proxy.get(upstream + '/driver/info').json() == {'stage': 'confirmed', 'count': 2}
+            assert client.get('/mocks').json()['state'] == {'count': 2}
+            assert client.post('/mocks/control', json={'action': 'reset'}).json()['state'] == {}
+            assert proxy.get(upstream + '/driver/info').json()['stage'] == 'start'
+            assert client.post('/mocks/control', json={'action': 'mode', 'mode': 'scenario'}).status_code == 422
     finally:
         client.post('/mocks/control', json={'action': 'disable'})
-        client.post('/mocks/control', json={'action': 'mode', 'mode': 'free'})
+
+
+def test_scripts_forward_gzip_json_and_timeout_keep_api_responsive(environment):
+    from concurrent.futures import ThreadPoolExecutor
+    client, port, _, upstream, _ = environment
+    previous = client.get('/rules').json()
+    source = f'''from chls import Script
+app = Script("Forward and timeout", path_prefix="/script/")
+@app.get("/script/forward")
+def forward(request, ctx):
+    request.url = {upstream + '/gzip'!r}
+    request.headers["X-Debug"] = "script"
+    ctx.state["forwarded"] = True
+    return None
+@app.get("/script/hang")
+def hang(request, ctx):
+    ctx.state["bad"] = True
+    while True:
+        pass
+@app.on_response
+def change(request, reply, ctx):
+    reply.json.set("enabled", True)
+    reply.headers["X-Script"] = "yes"
+'''
+    try:
+        client.put('/rules', json=[])
+        assert client.put('/mocks', json=dict(source=source, folder='')).status_code == 200
+        client.post('/mocks/control', json={'action': 'enable'})
+        with httpx.Client(proxy=f'http://127.0.0.1:{port}', trust_env=False, timeout=10) as proxy:
+            reply = proxy.get(upstream + '/script/forward')
+            assert reply.json()['enabled'] is True and reply.json()['header'] == 'script'
+            assert reply.headers['content-encoding'] == 'gzip' and reply.headers['X-Script'] == 'yes'
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                pending = pool.submit(proxy.get, upstream + '/script/hang')
+                time.sleep(.15)
+                started = time.monotonic()
+                assert client.get('/status').status_code == 200
+                assert time.monotonic() - started < 1
+                assert httpx.get(upstream + '/outside', proxy=f'http://127.0.0.1:{port}', trust_env=False).status_code == 200
+                assert pending.result().status_code == 500
+            status = client.get('/mocks').json()
+            assert status['state'] == {'forwarded': True}
+            assert 'время выполнения' in status['load_error']
+    finally:
+        client.post('/mocks/control', json={'action': 'disable'})
+        client.put('/rules', json=previous)
+
+
+def test_ctx_stop_current_reply_upstream_response_and_enable_again(environment):
+    client, port, _, upstream, _ = environment
+    previous = client.get('/rules').json()
+    source = '''from chls import Script, response
+app = Script("Stop from script", path_prefix="/script/")
+@app.get("/script/stop")
+def stop(request, ctx):
+    ctx.state["calls"] = ctx.state.get("calls", 0) + 1
+    ctx.stop()
+    return response(201, json={"calls": ctx.state["calls"]})
+@app.on_response
+def change(request, reply, ctx):
+    if request.path == "/script/stop":
+        raise RuntimeError("Must be skipped after request stop")
+    reply.json.set("enabled", True)
+    ctx.stop()
+'''
+    try:
+        client.put('/rules', json=[])
+        assert client.put('/mocks', json=dict(source=source, folder='')).status_code == 200
+        client.post('/mocks/control', json={'action': 'enable'})
+        with httpx.Client(proxy=f'http://127.0.0.1:{port}', trust_env=False) as proxy:
+            reply = proxy.get(upstream + '/script/stop')
+            assert reply.status_code == 201 and reply.json() == {'calls': 1}
+            status = client.get('/mocks').json()
+            assert not status['enabled'] and status['state'] == {'calls': 1}
+            assert status['logs'][0]['stopped'] is True
+            assert proxy.get(upstream + '/script/stop').json()['enabled'] is False
+            assert client.post('/mocks/control', json={'action': 'enable'}).status_code == 200
+            assert proxy.get(upstream + '/script/stop').json() == {'calls': 2}
+            client.post('/mocks/control', json={'action': 'enable'})
+            assert proxy.get(upstream + '/script/response-stop').json()['enabled'] is True
+            status = client.get('/mocks').json()
+            assert not status['enabled'] and status['logs'][0]['phase'] == 'response'
+    finally:
+        client.post('/mocks/control', json={'action': 'disable'})
+        client.put('/rules', json=previous)
 
 
 def test_recording_clear_delete_query_and_ssl(environment):
@@ -645,6 +718,35 @@ def test_selected_ssl_hosts_use_sni_and_leave_other_tls_opaque(environment):
         origin.shutdown()
         client.put('/rules', json=[])
         client.post('/capture/ssl', json={'enabled': True, 'scope': 'all', 'hosts': []})
+
+
+def test_old_script_policy_migrates_and_survives_engine_restart(tmp_path):
+    proxy_port = free_port()
+    (tmp_path / 'capture.json').write_text(json.dumps({'http': True, 'wireguard': False, 'port': proxy_port, 'lan': False}), 'utf-8')
+    source = '''from chls import Script, response
+app = Script("migration")
+app.hosts = ["code.test"]
+@app.get("/legacy/order")
+def reply(request, ctx):
+    return response(200, json={"mock": True})
+'''
+    file = tmp_path / 'script-module.json'
+    file.write_text(json.dumps(dict(source=source, folder='', hosts=['external.test'], scope='/legacy/', strict=True)), 'utf-8')
+    with restarted_engine(tmp_path, free_port()) as client:
+        status = client.get('/mocks').json()
+        assert status['applied'] and not status['enabled']
+        assert status['policy'] == dict(hosts=['code.test'], path_prefix='/legacy/', unmatched='block')
+        assert "app.path_prefix = '/legacy/'" in status['source']
+        assert client.post('/mocks/control', json={'action': 'enable'}).status_code == 200
+        with httpx.Client(proxy=f'http://127.0.0.1:{proxy_port}', trust_env=False) as proxy:
+            assert proxy.get('http://code.test/legacy/order').json() == {'mock': True}
+            assert proxy.get('http://code.test/legacy/unknown').status_code == 501
+        assert client.put('/mocks', json=dict(source=status['source'], folder='')).status_code == 200
+        assert set(json.loads(file.read_text('utf-8'))) == {'version', 'source', 'folder'}
+    with restarted_engine(tmp_path, free_port()) as client:
+        reloaded = client.get('/mocks').json()
+        assert reloaded['policy'] == status['policy']
+        assert reloaded['source'] == status['source']
 
 
 def test_ssl_scope_and_hosts_survive_engine_restart(tmp_path):

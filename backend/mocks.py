@@ -1,17 +1,12 @@
-"""Small declarative mock language. No eval, Python, JavaScript or network IO."""
+"""Legacy .chls parser used only for one-way migration into Python scripts."""
 import json
-import hashlib
 import re
 import shlex
-import time
-from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from mitmproxy import http
 
-from .hosts import flow_host
 
 
 class MockError(ValueError):
@@ -197,135 +192,3 @@ def validate_scope(hosts, scope):
     if not scope.startswith('/') or '?' in scope or '#' in scope:
         raise MockError('Префикс API должен начинаться с / и не содержать ? или #')
     return list(dict.fromkeys(hosts))
-
-
-class MockModule:
-    def __init__(self, root):
-        self.root = root
-        self.scenario = None
-        self.source = self.folder = self.stage = ''
-        self.hosts = []
-        self.scope = '/driver/'
-        self.strict = True
-        self.enabled = False
-        self.revision = 0
-        self.mode = 'free'
-        self.recent_triggers = {}
-        self.clock = time.monotonic
-        self.logs = deque(maxlen=200)
-        self.load_error = ''
-        file = root / 'mock-module.json'
-        if file.exists():
-            try:
-                data = json.loads(file.read_text('utf-8'))
-                self.source, self.folder = data['source'], data['folder']
-                self.hosts = validate_scope(data['hosts'], data['scope'])
-                self.scope, self.strict = data['scope'], data['strict']
-                self.mode = data.get('mode', 'free')
-                if self.mode not in ('free', 'scenario'):
-                    raise MockError('Неизвестный режим сценария')
-                self.scenario = compile_scenario(self.source, self.folder)
-                self.stage = self.scenario.initial
-            except (ValueError, OSError, KeyError) as error:
-                self.load_error = str(error)
-
-    def status(self):
-        return dict(source=self.source, folder=self.folder, hosts=self.hosts, scope=self.scope,
-                    strict=self.strict, enabled=self.enabled, stage=self.stage, revision=self.revision,
-                    name=self.scenario.name if self.scenario else '', stages=list(self.scenario.stages) if self.scenario else [],
-                    logs=list(reversed(self.logs)), load_error=self.load_error, mode=self.mode,
-                    triggers={stage: [dict(method=t.method, path=t.path, destination=t.destination, line=t.line) for t in items]
-                              for stage, items in self.scenario.triggers.items()} if self.scenario else {})
-
-    def install(self, scenario, data):
-        # Persist first; a failed save must leave the active revision untouched.
-        data = {**data, 'mode': self.mode}
-        file = self.root / 'mock-module.json'
-        temporary = file.with_suffix('.tmp')
-        temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), 'utf-8')
-        temporary.replace(file)
-        self.scenario = scenario
-        self.source, self.folder = data['source'], data['folder']
-        self.hosts, self.scope, self.strict = data['hosts'], data['scope'], data['strict']
-        self.stage = scenario.initial
-        self.revision += 1
-        self.recent_triggers.clear()
-        self.load_error = ''
-
-    def set_mode(self, mode):
-        if mode not in ('free', 'scenario'):
-            raise MockError('Выберите «Свободный» или «По сценарию»')
-        if self.scenario:
-            data = dict(source=self.source, folder=self.folder, hosts=self.hosts, scope=self.scope, strict=self.strict, mode=mode)
-            file = self.root / 'mock-module.json'
-            temporary = file.with_suffix('.tmp')
-            temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), 'utf-8')
-            temporary.replace(file)
-        self.mode = mode
-        self.recent_triggers.clear()
-
-    def handle(self, flow):
-        if not self.enabled or not self.scenario or ('*' not in self.hosts and flow_host(flow).lower().rstrip('.') not in self.hosts):
-            return False
-        path = urlsplit(flow.request.path).path
-        stage = self.stage
-        def find(items):
-            return next((r for r in items if r.path == path and r.method == flow.request.method), None) or next((r for r in items if r.path == path and r.method == '*'), None)
-        trigger = find(self.scenario.triggers[stage])
-        known_trigger = trigger
-        if known_trigger is None:
-            for items in self.scenario.triggers.values():
-                known_trigger = find(items)
-                if known_trigger:
-                    break
-        reply = None
-        for group in (self.scenario.stages[self.stage], self.scenario.common):
-            reply = next((r for r in group if r.path == path and r.method == flow.request.method), None)
-            reply = reply or next((r for r in group if r.path == path and r.method == '*'), None)
-            if reply:
-                break
-        if self.mode == 'scenario' and trigger:
-            # A transition is a local acknowledgement, independent of reply rules.
-            reply = Reply(flow.request.method, path, 200, b'', 'Триггер: 200, пустой ответ', trigger.line)
-        elif reply is None and known_trigger:
-            reply = Reply(flow.request.method, path, 200, b'', 'Триггер: пустой ответ', known_trigger.line)
-        if not reply and not (self.strict and (self.scope == '/' or path == self.scope.rstrip('/') or path.startswith(self.scope.rstrip('/') + '/'))):
-            return False
-        blocked = reply is None
-        body = b'{"error":"CHLS_MOCK_UNHANDLED"}' if blocked else reply.body
-        status = 501 if blocked else reply.status
-        headers = {'Content-Type': 'application/json; charset=utf-8'} if body else {}
-        flow.response = http.Response.make(status, b'' if flow.request.method == 'HEAD' else body, headers)
-        if status in (204, 304):
-            flow.response.headers.pop('Content-Length', None)
-        elif flow.request.method == 'HEAD':
-            flow.response.headers['Content-Length'] = str(len(body))
-        transition, trigger_note = None, ''
-        if known_trigger:
-            if self.mode == 'free':
-                trigger_note = 'Свободный режим: автоматический переход выключен'
-            elif trigger is None:
-                trigger_note = 'Для текущего этапа переход не настроен'
-            else:
-                now = self.clock()
-                self.recent_triggers = {key: expiry for key, expiry in self.recent_triggers.items() if expiry > now}
-                request_id = flow.request.headers.get('Idempotency-Key') or flow.request.headers.get('X-Request-Id')
-                fingerprint = request_id or hashlib.sha256(flow.request.raw_content or b'').hexdigest()
-                client = flow.client_conn.peername[0] if flow.client_conn.peername else ''
-                key = (client, flow_host(flow), flow.request.method, flow.request.path, bool(request_id), fingerprint)
-                if key in self.recent_triggers:
-                    trigger_note = 'Повтор запроса: этап не изменён'
-                else:
-                    if len(self.recent_triggers) >= 2000:
-                        self.recent_triggers.pop(next(iter(self.recent_triggers)))
-                    self.recent_triggers[key] = now + (30 if request_id else 2)
-                    self.stage = trigger.destination
-                    transition = dict(source=stage, destination=self.stage, line=trigger.line)
-        event = dict(time=time.time(), module=self.scenario.name, stage=stage, revision=self.revision,
-                     method=flow.request.method, path=flow.request.path, status=status, blocked=blocked,
-                     source=reply.source if reply else 'Нет обработчика', line=reply.line if reply else None,
-                     transition=transition, trigger_note=trigger_note)
-        self.logs.append(event)
-        flow.metadata['mock'] = event
-        flow.metadata.setdefault('rules', []).append({'id': 'mock-module', 'name': f'Сценарий · {self.scenario.name} · {stage}', 'kind': 'mock', 'phase': 'request', 'matched': True, 'matches': 1})
-        return True

@@ -141,6 +141,18 @@ export interface BackendEvent {
   message?: string;
   [key: string]: unknown;
 }
+export interface SavedScript {
+  id: string;
+  name: string;
+  source: string;
+  folder: string;
+  updatedAt: string;
+}
+export interface ScriptLibraryData {
+  version: number;
+  selected: string;
+  items: SavedScript[];
+}
 declare global {
   interface Window {
     chls: {
@@ -155,8 +167,14 @@ declare global {
       ) => Promise<T>;
       chooseFile: () => Promise<string | null>;
       chooseMockFolder: () => Promise<string | null>;
-      mockOrderTemplate: () => Promise<string>;
+      scriptLibrary: () => Promise<ScriptLibraryData>;
+      saveScript: (
+        item: Omit<SavedScript, "id" | "updatedAt"> & { id?: string },
+      ) => Promise<ScriptLibraryData>;
+      selectScript: (id: string) => Promise<ScriptLibraryData>;
+      deleteScript: (id: string) => Promise<ScriptLibraryData>;
       importMockScript: () => Promise<{
+        name: string;
         source: string;
         folder: string;
       } | null>;

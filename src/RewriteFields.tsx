@@ -98,17 +98,26 @@ export default function RewriteFields({
         <>
           <label>
             {draft.action === "json"
-              ? "Путь поля через точку"
+              ? "Имя поля или точный путь JSON"
               : "Имя заголовка"}
             <input
               required
               value={draft.key}
               onChange={(e) => onChange({ key: e.target.value })}
               placeholder={
-                draft.action === "json" ? "data.features.enabled" : "X-Debug"
+                draft.action === "json"
+                  ? "time или order.start.time"
+                  : "X-Debug"
               }
             />
           </label>
+          {draft.action === "json" && (
+            <p className="field-hint">
+              Короткое имя ищется во всём JSON, включая массивы. Если совпадений
+              несколько, правило покажет ошибку с точными путями. Для ключей с
+              точками используйте JSON Pointer: /order/start/time.
+            </p>
+          )}
           <label className="checkbox-label">
             <input
               type="checkbox"

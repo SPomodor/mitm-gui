@@ -8,6 +8,7 @@ from mitmproxy import http
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 
 from .hosts import flow_host, hostname
+from .json_fields import set_field, remove_field
 from .rewrite import RewriteOptions, REQUEST_ACTIONS, apply_rewrite, validate_spec
 
 
@@ -150,15 +151,10 @@ def apply_rules(flow: http.HTTPFlow, rules: list[Rule], phase: str, max_body: in
                     message.text = message.get_text(strict=True).replace(rule.key, rule.value)
                 elif rule.action == 'json':
                     document = json.loads(message.get_text(strict=True))
-                    parts = rule.key.split('.')
-                    target = document
-                    for part in parts[:-1]:
-                        target = target[int(part)] if isinstance(target, list) else target[part]
-                    key = int(parts[-1]) if isinstance(target, list) else parts[-1]
                     if rule.remove:
-                        del target[key]
+                        remove_field(document, rule.key)
                     else:
-                        target[key] = json.loads(rule.value)
+                        set_field(document, rule.key, json.loads(rule.value))
                     message.text = json.dumps(document, ensure_ascii=False)
                 message.headers.pop('etag', None)
                 message.headers.pop('content-md5', None)

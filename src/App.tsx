@@ -873,7 +873,7 @@ export default function App() {
           className="mock-page-container"
           style={{ display: page === "mocks" ? "flex" : "none" }}
         >
-          <Mocks onEnabledChange={setMockEnabled} />
+          <Mocks active={page === "mocks"} onEnabledChange={setMockEnabled} />
         </div>
         <footer className="statusbar">
           <div>

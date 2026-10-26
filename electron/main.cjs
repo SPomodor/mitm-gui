@@ -14,6 +14,7 @@ const net = require("node:net");
 const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const WebSocket = require("ws");
+const { ScriptLibrary } = require("./script-library.cjs");
 
 let window,
   backend,
@@ -29,7 +30,7 @@ if (process.env.CHLS_USER_DATA) {
   app.setPath("userData", path.resolve(process.env.CHLS_USER_DATA));
 }
 const allowed =
-  /^\/(status|recording|mocks(?:\/(?:validate|control))?|capture\/(start|stop|ssl)|wireguard|certificate|rules(?:\/[a-zA-Z0-9-]+)?|sessions(?:\/[a-zA-Z0-9-]+(?:\/export)?)?|flows(?:\/[a-zA-Z0-9-]+(?:\/body\/(?:original_)?(?:request|response))?)?)(?:\?.*)?$/;
+  /^\/(status|recording|mocks(?:\/(?:validate|control|convert))?|capture\/(start|stop|ssl)|wireguard|certificate|rules(?:\/[a-zA-Z0-9-]+)?|sessions(?:\/[a-zA-Z0-9-]+(?:\/export)?)?|flows(?:\/[a-zA-Z0-9-]+(?:\/body\/(?:original_)?(?:request|response))?)?)(?:\?.*)?$/;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function request(route, method = "GET", data, timeout = 20000) {
@@ -176,6 +177,19 @@ function trusted(event) {
 }
 
 function configureWindow(target) {
+  target.webContents.on("will-prevent-unload", (event) => {
+    const choice = dialog.showMessageBoxSync(target, {
+      type: "question",
+      title: "Несохранённый сценарий",
+      message: "В сценарии есть несохранённые изменения.",
+      detail:
+        "Вернитесь в редактор и нажмите Ctrl+S, чтобы сохранить их в библиотеке.",
+      buttons: ["Вернуться", "Закрыть без сохранения"],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    if (choice === 1) event.preventDefault();
+  });
   target.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   target.webContents.on("will-navigate", (event) => event.preventDefault());
   target.webContents.on("context-menu", (_, params) => {
@@ -282,25 +296,27 @@ ipcMain.handle("choose-mock-folder", async (event) => {
   });
   return result.canceled ? null : result.filePaths[0];
 });
-ipcMain.handle("mock-order-template", async (event) => {
-  trusted(event);
-  const base = app.isPackaged ? process.resourcesPath : root;
-  return fs.promises.readFile(
-    path.join(base, "examples", "order-187", "scenario.chls"),
-    "utf8",
-  );
-});
+for (const action of ["read", "save", "select", "remove"]) {
+  ipcMain.handle(`script-library-${action}`, (event, value) => {
+    trusted(event);
+    const library = new ScriptLibrary(
+      path.join(app.getPath("userData"), "script-library.json"),
+    );
+    return library[action](value);
+  });
+}
 ipcMain.handle("import-mock-script", async (event) => {
   const owner = trusted(event);
   const result = await dialog.showOpenDialog(owner, {
     title: "Открыть сценарий",
     properties: ["openFile"],
-    filters: [{ name: "CHLS сценарий", extensions: ["chls", "txt"] }],
+    filters: [{ name: "Python / CHLS", extensions: ["py", "chls", "txt"] }],
   });
   if (result.canceled) return null;
   if ((await fs.promises.stat(result.filePaths[0])).size > 800000)
     throw new Error("Сценарий слишком большой");
   return {
+    name: path.basename(result.filePaths[0], path.extname(result.filePaths[0])),
     source: await fs.promises.readFile(result.filePaths[0], "utf8"),
     folder: path.dirname(result.filePaths[0]),
   };
@@ -437,7 +453,7 @@ app.whenReady().then(async () => {
     },
   });
   configureWindow(window);
-  window.on("close", () => {
+  window.on("closed", () => {
     for (const item of editors.values()) item.window.destroy();
   });
   backendReady = startBackend();
@@ -457,6 +473,12 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => app.quit());
 app.on("before-quit", (event) => {
   if (quitting) return;
+  // Let the renderer resolve unsaved edits before shutting down its engine.
+  if (window && !window.isDestroyed()) {
+    event.preventDefault();
+    window.close();
+    return;
+  }
   event.preventDefault();
   quitting = true;
   socket?.close();

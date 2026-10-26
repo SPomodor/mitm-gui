@@ -1,5 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
+  Copy,
+  Plus,
+  Save,
+  Trash2,
   Download,
   FileCode2,
   FolderOpen,
@@ -11,13 +15,13 @@ import {
 } from "lucide-react";
 import { api } from "./store";
 import { PaneSeparator, usePaneResize } from "./PaneResize";
+import type { SavedScript, ScriptLibraryData } from "./types";
+import demo from "../examples/basic/scenario.py?raw";
+const ScriptEditor = lazy(() => import("./ScriptEditor"));
 
 interface MockDocument {
   source: string;
   folder: string;
-  hosts: string[];
-  scope: string;
-  strict: boolean;
 }
 interface MockLog {
   time: number;
@@ -26,19 +30,22 @@ interface MockLog {
   revision: number;
   method: string;
   path: string;
-  status: number;
+  status: number | null;
   blocked: boolean;
   source: string;
   line: number | null;
   transition?: { source: string; destination: string; line: number } | null;
   trigger_note?: string;
+  messages?: string[];
+  state_changes?: Record<string, unknown>;
+  error?: string;
+  phase?: string;
 }
 interface MockStatus extends MockDocument {
-  mode: "free" | "scenario";
-  triggers: Record<
-    string,
-    { method: string; path: string; destination: string; line: number }[]
-  >;
+  state: Record<string, unknown>;
+  applied: boolean;
+  session_key: string;
+  sessions: number;
   name: string;
   stages: string[];
   stage: string;
@@ -47,55 +54,21 @@ interface MockStatus extends MockDocument {
   logs: MockLog[];
   load_error: string;
 }
-const demo = `# Учебный пример, не ответы реального приложения.
-модуль "Демо заказа"
-начало "Собирается"
-путь info = "/driver/demo/order"
-путь arrive = "/driver/v1/cargo-pro-api/grocery/v1/order/arrive-at-point"
-путь confirm = "/driver/v1/cargo-pro-api/grocery/v1/order/exchange/confirm"
-
-общие:
-  POST "/driver/demo/seen" -> 200 пусто
-
-этап "Собирается":
-  GET info -> 200 {"orderId":"demo-order","status":"assembling","mock":true}
-  при POST confirm -> следующий
-
-этап "В магазин":
-  GET info -> 200 {"orderId":"demo-order","status":"to_store","mock":true}
-  при POST arrive -> следующий
-
-этап "В магазине":
-  GET info -> 200 {"orderId":"demo-order","status":"at_store","mock":true}
-  при POST confirm -> следующий
-
-этап "К клиенту":
-  GET info -> 200 {"orderId":"demo-order","status":"to_customer","mock":true}
-  при POST arrive -> следующий
-
-этап "Передать заказ":
-  GET info -> 200 {"orderId":"demo-order","status":"at_customer","mock":true}
-  при POST confirm -> следующий
-
-этап "Вернуться":
-  GET info -> 200 {"orderId":"demo-order","status":"returning","mock":true}
-  при POST confirm -> следующий
-
-этап "Завершён":
-  GET info -> 200 {"orderId":"demo-order","status":"completed","mock":true}
-`;
 const empty: MockDocument = {
   source: "",
   folder: "",
-  hosts: [],
-  scope: "/driver/",
-  strict: true,
 };
 export default function Mocks({
   onEnabledChange,
+  active = true,
 }: {
   onEnabledChange: (enabled: boolean) => void;
+  active?: boolean;
 }) {
+  const [editorStarted, setEditorStarted] = useState(active);
+  useEffect(() => {
+    if (active) setEditorStarted(true);
+  }, [active]);
   const workspaceSize = usePaneResize("scenarios-v1", {
     initial: 0.72,
     min: 360,
@@ -104,11 +77,18 @@ export default function Mocks({
   });
   const [status, setStatus] = useState<MockStatus | null>(null);
   const [draft, setDraft] = useState<MockDocument>(empty);
-  const [hostText, setHostText] = useState("");
+  const [library, setLibrary] = useState<ScriptLibraryData | null>(null);
+  const [selected, setSelected] = useState("");
+  const [name, setName] = useState("");
+  const [query, setQuery] = useState("");
+  const [pending, setPending] = useState<(() => Promise<void>) | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const initialized = useRef(false);
+  const initializing = useRef(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     onEnabledChange(status?.enabled || false);
   }, [status?.enabled, onEnabledChange]);
@@ -119,18 +99,29 @@ export default function Mocks({
         const value = await api<MockStatus>("/mocks");
         if (!active) return;
         setStatus(value);
-        if (!initialized.current) {
+        if (!initialized.current && !initializing.current) {
+          initializing.current = true;
+          let collection = await window.chls.scriptLibrary();
+          // Preserve the previous single script without executing or replacing it.
+          if (!collection.items.length) {
+            collection = await window.chls.saveScript({
+              name: value.source
+                ? value.name || "Мой сценарий"
+                : "Пример · example.com",
+              source: value.source || demo,
+              folder: value.folder,
+            });
+          }
+          if (!active) return;
           initialized.current = true;
-          setDraft({
-            source: value.source,
-            folder: value.folder,
-            hosts: value.hosts,
-            scope: value.scope,
-            strict: value.strict,
-          });
-          setHostText(value.hosts.join(", "));
+          setLibrary(collection);
+          const item =
+            collection.items.find((i) => i.id === collection.selected) ||
+            collection.items[0];
+          openItem(item);
         }
       } catch (e) {
+        initializing.current = false;
         if (active) setError((e as Error).message);
       }
     };
@@ -144,23 +135,100 @@ export default function Mocks({
       unsubscribe();
     };
   }, []);
-  const document = {
-    ...draft,
-    hosts: hostText
-      .split(",")
-      .map((h) => h.trim())
-      .filter(Boolean),
-  };
+  const saved = library?.items.find((item) => item.id === selected);
+  const unsaved =
+    !!saved &&
+    (saved.name !== name ||
+      saved.source !== draft.source ||
+      saved.folder !== draft.folder);
+  function openItem(item: SavedScript) {
+    setSelected(item.id);
+    setName(item.name);
+    setDraft({ source: item.source, folder: item.folder });
+    setError("");
+  }
+  async function saveCurrent() {
+    const collection = await window.chls.saveScript({
+      id: selected,
+      name,
+      ...draft,
+    });
+    setLibrary(collection);
+    setNotice("Сохранено в библиотеке. Работающий скрипт не изменён.");
+  }
+  function transition(task: () => Promise<void>) {
+    if (unsaved) setPending(() => task);
+    else void run(task);
+  }
+  async function createScript(
+    source = demo,
+    title = "Новый сценарий",
+    folder = "",
+  ) {
+    const collection = await window.chls.saveScript({
+      name: title,
+      source,
+      folder,
+    });
+    setLibrary(collection);
+    openItem(collection.items.find((item) => item.id === collection.selected)!);
+    setQuery("");
+    setNotice(
+      "Сценарий добавлен в библиотеку. Проверьте код и примените, когда будете готовы.",
+    );
+  }
+  useEffect(() => {
+    if (!active) return;
+    const save = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (library && name.trim()) void run(saveCurrent);
+      }
+    };
+    window.addEventListener("keydown", save, true);
+    return () => window.removeEventListener("keydown", save, true);
+  });
+  useEffect(() => {
+    const guard = (event: BeforeUnloadEvent) => {
+      if (unsaved) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [unsaved]);
+  useEffect(() => {
+    if (!pending && !deleteOpen) return;
+    const previous = window.document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    dialog?.querySelector<HTMLButtonElement>("button")?.focus();
+    const trap = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const buttons = Array.from(
+        dialog?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ||
+          [],
+      );
+      const first = buttons[0],
+        last = buttons[buttons.length - 1];
+      if (event.shiftKey && window.document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && window.document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    window.addEventListener("keydown", trap, true);
+    return () => {
+      window.removeEventListener("keydown", trap, true);
+      previous?.focus();
+    };
+  }, [pending, deleteOpen]);
+  const document = draft;
   const dirty =
     !!status &&
-    JSON.stringify(document) !==
-      JSON.stringify({
-        source: status.source,
-        folder: status.folder,
-        hosts: status.hosts,
-        scope: status.scope,
-        strict: status.strict,
-      });
+    (draft.source !== status.source || draft.folder !== status.folder);
   async function run(task: () => Promise<void>) {
     if (busy) return;
     setBusy(true);
@@ -174,36 +242,132 @@ export default function Mocks({
       setBusy(false);
     }
   }
-  async function control(action: string, stage = "", mode = "free") {
+  async function control(action: string, stage = "") {
     await run(async () => {
       setStatus(
         await api<MockStatus>("/mocks/control", "POST", {
           action,
           stage,
-          mode,
         }),
       );
     });
   }
   return (
     <section className="mocks-page">
+      {(pending || deleteOpen) && (
+        <div
+          className="modal-backdrop"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setPending(null);
+              setDeleteOpen(false);
+            }
+          }}
+        >
+          <div
+            className="script-confirm"
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="script-dialog-title"
+          >
+            <h2 id="script-dialog-title">
+              {deleteOpen ? "Удалить сценарий?" : "Сохранить изменения?"}
+            </h2>
+            <p>
+              {deleteOpen
+                ? `«${name}» будет удалён из библиотеки. Работающий скрипт продолжит выполняться.`
+                : `В сценарии «${name}» есть несохранённые изменения.`}
+            </p>
+            <div>
+              <button
+                className="button"
+                autoFocus
+                disabled={busy}
+                onClick={() => {
+                  setPending(null);
+                  setDeleteOpen(false);
+                }}
+              >
+                Отмена
+              </button>
+              {deleteOpen ? (
+                <button
+                  className="button"
+                  disabled={busy}
+                  onClick={() =>
+                    run(async () => {
+                      const collection =
+                        await window.chls.deleteScript(selected);
+                      setLibrary(collection);
+                      setDeleteOpen(false);
+                      if (collection.items.length)
+                        openItem(
+                          collection.items.find(
+                            (i) => i.id === collection.selected,
+                          ) || collection.items[0],
+                        );
+                      else await createScript(demo, "Пример · example.com");
+                      setNotice(
+                        "Удалено из библиотеки. Работающий скрипт не изменён.",
+                      );
+                    })
+                  }
+                >
+                  Удалить
+                </button>
+              ) : (
+                <>
+                  <button
+                    className="button"
+                    disabled={busy}
+                    onClick={() =>
+                      run(async () => {
+                        const next = pending!;
+                        setPending(null);
+                        await next();
+                      })
+                    }
+                  >
+                    Не сохранять
+                  </button>
+                  <button
+                    className="button primary"
+                    disabled={busy || !name.trim()}
+                    onClick={() =>
+                      run(async () => {
+                        await saveCurrent();
+                        const next = pending!;
+                        setPending(null);
+                        await next();
+                      })
+                    }
+                  >
+                    Сохранить и продолжить
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <div className="page-heading">
         <div>
           <h1>Сценарии</h1>
-          <p>Общие ответы и этапы заказа · модуль включается отдельно</p>
+          <p>Python-скрипты · обработчики запросов, ответов и сценарии</p>
         </div>
         <div className="heading-actions">
           <button
             className="button"
-            disabled={busy || !status?.stages.length}
+            disabled={busy || !status?.applied}
             onClick={() => control("reset")}
           >
             <RotateCcw size={14} />
-            Сбросить этап
+            Сбросить состояние
           </button>
           <button
             className={`button ${status?.enabled ? "recording" : "primary"}`}
-            disabled={busy || !status?.stages.length}
+            disabled={busy || !status?.applied}
             onClick={() => control(status?.enabled ? "disable" : "enable")}
           >
             {status?.enabled ? <Square size={12} /> : <Play size={13} />}{" "}
@@ -216,21 +380,11 @@ export default function Mocks({
           <span className={`status-dot ${status?.enabled ? "live" : ""}`} />
           <strong>{status?.name || "Сценарий не применён"}</strong>
           <span className="muted">
-            {status?.enabled ? `Активен · ${status.stage}` : "Выключен"}
+            {status?.enabled
+              ? `Активен${status.stage ? " · " + status.stage : ""}`
+              : "Выключен"}
             {dirty && " · есть черновик"}
           </span>
-          <label className="mock-mode-label">
-            Режим
-            <select
-              aria-label="Режим сценария"
-              value={status?.mode || "free"}
-              disabled={busy || !status}
-              onChange={(e) => control("mode", "", e.target.value)}
-            >
-              <option value="free">Свободный</option>
-              <option value="scenario">По сценарию</option>
-            </select>
-          </label>
         </div>
         {!!status?.stages.length && (
           <div className="mock-stage-buttons">
@@ -239,7 +393,7 @@ export default function Mocks({
                 key={stage}
                 className={`button ${status.stage === stage ? "selected" : ""}`}
                 aria-pressed={status.stage === stage}
-                disabled={busy || status.mode === "scenario"}
+                disabled={busy || !library}
                 onClick={() => control("stage", stage)}
               >
                 {stage}
@@ -247,20 +401,13 @@ export default function Mocks({
             ))}
           </div>
         )}
-        {status?.mode === "scenario" && (
-          <div
-            className="mock-next-trigger"
-            title={(status.triggers[status.stage] || [])
-              .map((t) => `${t.method} ${t.path} → ${t.destination}`)
-              .join("\n")}
-          >
-            {(status.triggers[status.stage] || []).length
-              ? "Ждём: " +
-                status.triggers[status.stage]
-                  .map((t) => `${t.method} ${t.path} → ${t.destination}`)
-                  .join(" · ")
-              : "Для этого этапа нет автоматических переходов. Для ручного выбора включите «Свободный» режим."}
-          </div>
+        {status?.applied && (
+          <details className="mock-help">
+            <summary>
+              Переменные · {status.session_key} · контекстов: {status.sessions}
+            </summary>
+            <pre>{JSON.stringify(status.state, null, 2)}</pre>
+          </details>
         )}
       </div>
       <div
@@ -271,164 +418,215 @@ export default function Mocks({
         }}
       >
         <div className="mock-editor-pane">
+          <div className="script-library" aria-label="Библиотека сценариев">
+            <div className="script-library-picker">
+              <input
+                aria-label="Поиск сценариев"
+                placeholder="Найти сценарий…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <select
+                aria-label="Выбрать сценарий"
+                value={selected}
+                disabled={busy || !library}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  transition(async () => {
+                    const collection = await window.chls.selectScript(id);
+                    setLibrary(collection);
+                    openItem(collection.items.find((item) => item.id === id)!);
+                  });
+                }}
+              >
+                {library?.items
+                  .filter(
+                    (item) =>
+                      item.id === selected ||
+                      item.name.toLowerCase().includes(query.toLowerCase()),
+                  )
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+              </select>
+              <button
+                className="button"
+                disabled={busy || !library}
+                onClick={() => transition(() => createScript())}
+              >
+                <Plus size={14} />
+                Новый
+              </button>
+            </div>
+            <div className="script-library-actions">
+              <input
+                aria-label="Название сценария"
+                maxLength={100}
+                value={name}
+                disabled={busy || !library}
+                onChange={(e) => setName(e.target.value)}
+              />
+              <span className="muted script-save-state">
+                {unsaved ? "Не сохранён" : "Сохранён"}
+              </span>
+              <button
+                className="button"
+                title="Сохранить в библиотеке (Ctrl+S)"
+                disabled={busy || !library || !name.trim()}
+                onClick={() => run(saveCurrent)}
+              >
+                <Save size={14} />
+                Сохранить
+              </button>
+              <button
+                className="button subtle"
+                aria-label="Дублировать сценарий"
+                title="Дублировать сценарий"
+                disabled={busy || !library}
+                onClick={() =>
+                  transition(() =>
+                    createScript(
+                      draft.source,
+                      name.slice(0, 92) + " · копия",
+                      draft.folder,
+                    ),
+                  )
+                }
+              >
+                <Copy size={14} />
+              </button>
+              <button
+                className="button subtle"
+                aria-label="Удалить сценарий"
+                title="Удалить из библиотеки"
+                disabled={busy || !library}
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </div>
           <div className="mock-editor-toolbar">
             <strong>
               <FileCode2 size={15} />
-              Сценарий
+              Python
             </strong>
             <div>
               <button
                 className="button subtle"
-                disabled={busy}
-                onClick={() => {
-                  if (
-                    draft.source &&
-                    !confirm("Заменить текущий черновик учебным примером?")
-                  )
-                    return;
-                  setDraft({ ...empty, source: demo });
-                  setHostText("mock.chls.test");
-                  setNotice(
-                    "Демо: http://mock.chls.test/driver/demo/order через прокси CHLS. Это учебные ответы.",
-                  );
-                }}
-              >
-                Демо
-              </button>
-              <button
-                className="button subtle"
-                disabled={busy}
+                disabled={busy || !library}
                 onClick={() =>
-                  run(async () => {
-                    if (
-                      draft.source &&
-                      !confirm("Заменить черновик шаблоном заказа 187?")
-                    )
-                      return;
-                    const source = await window.chls.mockOrderTemplate();
-                    setDraft((d) => ({ ...d, source }));
-                    setNotice(
-                      "Шаблон 187: выберите папку, содержащую order/187, и укажите домены. Нужны ваши JSON; мок конфигов пока не включён.",
-                    );
-                  })
+                  transition(() => createScript(demo, "Пример · example.com"))
                 }
               >
-                Шаблон 187
+                Пример
               </button>
               <button
                 className="button subtle"
-                disabled={busy}
+                disabled={busy || !library}
                 onClick={() =>
-                  run(async () => {
+                  transition(async () => {
                     const item = await window.chls.importMockScript();
-                    if (item) {
-                      setDraft((d) => ({ ...d, ...item }));
-                      setNotice(
-                        "Сценарий открыт в черновике. Укажите домен, проверьте и примените.",
+                    if (item)
+                      await createScript(
+                        item.source,
+                        item.name.slice(0, 100),
+                        item.folder,
                       );
-                    }
                   })
                 }
               >
                 <Upload size={13} />
-                Открыть
+                Импорт
               </button>
               <button
                 className="button subtle"
-                disabled={busy || !draft.source}
+                disabled={busy || !library || !draft.source || !name.trim()}
                 onClick={() =>
                   run(async () => {
-                    await window.chls.saveText("scenario.chls", draft.source);
+                    await window.chls.saveText(
+                      name.replace(/[<>:"/\\|?*]/g, "_") + ".py",
+                      draft.source,
+                    );
                   })
                 }
               >
                 <Download size={13} />
-                Сохранить файл
+                Экспорт .py
               </button>
             </div>
           </div>
-          <div className="mock-settings">
-            <label className="checkbox-label mock-all-hosts">
+          {/(^|\n)\s*модуль\s/.test(draft.source) && (
+            <button
+              className="button"
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  const result = await api<{ source: string }>(
+                    "/mocks/convert",
+                    "POST",
+                    document,
+                  );
+                  setDraft((d) => ({ ...d, source: result.source }));
+                  setNotice(
+                    "Переведено в Python. Проверьте ответы переходов: скрытого 200 и подавления повторов больше нет.",
+                  );
+                })
+              }
+            >
+              Перевести в Python
+            </button>
+          )}
+          <label className="mock-folder">
+            <span>Папка JSON</span>
+            <div className="file-input">
               <input
-                type="checkbox"
-                checked={hostText.trim() === "*"}
-                disabled={busy}
-                onChange={(e) => setHostText(e.target.checked ? "*" : "")}
+                aria-label="Папка JSON"
+                placeholder="Для ответов из файлов"
+                value={draft.folder}
+                disabled={busy || !library}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, folder: e.target.value }))
+                }
               />
-              Все домены
-              <span className="muted">
-                Ответы по путям сценария на любом домене
-              </span>
-            </label>
-            <label>
-              Домены через запятую
-              <input
-                aria-label="Домены сценария"
-                placeholder="api.example.com"
-                disabled={hostText.trim() === "*"}
-                value={hostText}
-                onChange={(e) => setHostText(e.target.value)}
-              />
-            </label>
-            <label>
-              Папка JSON
-              <div className="file-input">
-                <input
-                  aria-label="Папка JSON"
-                  placeholder="Для ответов из файлов"
-                  value={draft.folder}
-                  onChange={(e) =>
-                    setDraft((d) => ({ ...d, folder: e.target.value }))
-                  }
-                />
-                <button
-                  className="button"
-                  aria-label="Выбрать папку JSON"
-                  onClick={() =>
-                    run(async () => {
-                      const folder = await window.chls.chooseMockFolder();
-                      if (folder) setDraft((d) => ({ ...d, folder }));
-                    })
-                  }
-                >
-                  <FolderOpen size={14} />
-                </button>
-              </div>
-            </label>
-            <div className="mock-scope">
-              <label>
-                Префикс API
-                <input
-                  value={draft.scope}
-                  onChange={(e) =>
-                    setDraft((d) => ({ ...d, scope: e.target.value }))
-                  }
-                />
-              </label>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={draft.strict}
-                  onChange={(e) =>
-                    setDraft((d) => ({ ...d, strict: e.target.checked }))
-                  }
-                />
-                Блокировать неизвестные запросы внутри префикса
-              </label>
+              <button
+                className="button"
+                aria-label="Выбрать папку JSON"
+                disabled={busy || !library}
+                onClick={() =>
+                  run(async () => {
+                    const folder = await window.chls.chooseMockFolder();
+                    if (folder) setDraft((d) => ({ ...d, folder }));
+                  })
+                }
+              >
+                <FolderOpen size={14} />
+              </button>
             </div>
-          </div>
-          <textarea
-            className="mock-code"
-            aria-label="Код сценария"
-            spellCheck={false}
-            placeholder={
-              'модуль "Заказ"\n\nэтап "Собирается":\n  "/driver/order/info" -> 200 "order.json"'
+          </label>
+          <Suspense
+            fallback={
+              <div className="script-editor muted padded">
+                Загрузка редактора…
+              </div>
             }
-            value={draft.source}
-            onChange={(e) =>
-              setDraft((d) => ({ ...d, source: e.target.value }))
-            }
-          />
+          >
+            {editorStarted && library && (
+              <ScriptEditor
+                key={selected}
+                readOnly={busy}
+                value={draft.source}
+                onChange={(source) => setDraft((d) => ({ ...d, source }))}
+              />
+            )}
+            {editorStarted && !library && (
+              <div className="script-editor muted padded" role="status">
+                Загрузка скрипта…
+              </div>
+            )}
+          </Suspense>
           {(error || status?.load_error) && (
             <div className="inline-error" role="alert">
               {error || status?.load_error}
@@ -441,11 +639,11 @@ export default function Mocks({
           )}
           <div className="mock-apply">
             <span className="muted">
-              Применение возвращает начальный этап. Включение — отдельно.
+              Применить этот скрипт: сохранить и сбросить состояние.
             </span>
             <button
               className="button"
-              disabled={busy || !draft.source}
+              disabled={busy || !library || !draft.source || !name.trim()}
               onClick={() =>
                 run(async () => {
                   const result = await api<{ stages: string[] }>(
@@ -463,7 +661,7 @@ export default function Mocks({
             </button>
             <button
               className="button primary"
-              disabled={busy || !draft.source}
+              disabled={busy || !library || !draft.source || !name.trim()}
               onClick={() =>
                 run(async () => {
                   const value = await api<MockStatus>(
@@ -472,8 +670,8 @@ export default function Mocks({
                     document,
                   );
                   setStatus(value);
-                  setDraft({ ...document, hosts: value.hosts });
-                  setHostText(value.hosts.join(", "));
+                  setDraft({ source: value.source, folder: value.folder });
+                  await saveCurrent();
                   setNotice(
                     "Сценарий применён" +
                       (value.enabled
@@ -515,7 +713,7 @@ export default function Mocks({
                 >
                   <div>
                     <strong>
-                      {log.status} {log.method}
+                      {log.status || "→ сервер"} {log.method}
                     </strong>
                     <time>
                       {new Date(log.time * 1000).toLocaleTimeString()}
@@ -523,7 +721,7 @@ export default function Mocks({
                   </div>
                   <code>{log.path}</code>
                   <span>
-                    {log.stage} · v{log.revision}
+                    {log.stage || "Скрипт"} · {log.phase} · v{log.revision}
                   </span>
                   <small>
                     {log.source}
@@ -534,42 +732,74 @@ export default function Mocks({
                       {log.transition.source} → {log.transition.destination}
                     </strong>
                   )}
-                  {log.trigger_note && <small>{log.trigger_note}</small>}
+                  {log.messages?.map((message, i) => (
+                    <small key={i}>{message}</small>
+                  ))}
+                  {!!Object.keys(log.state_changes || {}).length && (
+                    <pre>{JSON.stringify(log.state_changes, null, 2)}</pre>
+                  )}
                 </div>
               ))
             ) : (
               <p className="mock-help">
-                Здесь появятся ответы модуля и заблокированные запросы. После
-                выбора этапа приложение должно снова запросить данные.
+                Здесь появятся обработчики, ошибки, переходы и изменения
+                состояния.
               </p>
             )}
           </div>
           <details className="mock-help">
-            <summary>Как писать сценарий</summary>
+            <summary>Как писать скрипты</summary>
             <p>
-              «общие:» задаёт ответы для всех этапов. Ответ этапа заменяет общий
-              для того же пути. HTTP-метод перед путём необязателен; без него
-              подходят все методы. Query string не участвует в сопоставлении.
+              Обычный Python: app = Script("Название"), @app.get("/path") и
+              @app.post("/path"). Обработчик получает request и ctx. Верните
+              response(200, json=...), response(200, file="order.json") или None
+              для передачи в обычные правила и на сервер.
+            </p>
+            <p>
+              Область задаётся в коде: Script("Название",
+              hosts=["api.example.com"], path_prefix="/driver/",
+              unmatched="forward"). Без hosts и path_prefix подходят все домены
+              и пути. unmatched="block" возвращает 501 для неизвестных запросов
+              внутри области.
+            </p>
+            <p>
+              ctx.state — изменяемый словарь. app.session_key = lambda r:
+              r.headers["X-Device-Id"] разделяет состояние по устройству. Без
+              ключа состояние общее. Scenario добавляет состояния:
+              @order.get("/path", state="created"), ctx.goto("completed").
+              Переходы всегда явные; повторный запрос выполняется снова.
+            </p>
+            <p>
+              ctx.stop() выключает весь скрипт после успешного обработчика.
+              Текущий ответ отправляется, следующие запросы идут обычным путём.
+              Состояние сохраняется; снова включить можно кнопкой.
             </p>
             <pre>
               {
-                'файлы "order/187"\nпуть info = "/driver/order/info"\n\nобщие:\n  POST "/driver/seen" -> 200 пусто\n\nэтап "Собирается":\n  GET info -> 200 "order.json"'
+                'body = ctx.load_json("order.json")\nbody.set("time", 123)\nreturn response(200, json=body)'
               }
             </pre>
             <p>
-              Внутри этапа добавьте{" "}
-              <code>при POST "/driver/order/confirm" -&gt; следующий</code> или
-              укажите имя этапа в кавычках вместо «следующий». В режиме «По
-              сценарию» активный триггер сам возвращает 200 с пустым телом и
-              переключает этап независимо от отдельно заданного ответа.
-              Указывать ответ для триггера не нужно. В свободном режиме этапы
-              выбираются вручную.
+              Короткое имя поля должно быть уникальным во всём JSON. Также
+              доступны body.get(), body.remove(), точные пути order.start.time и
+              JSON Pointer /order/start/time. body.data — обычный словарь или
+              список Python.
             </p>
             <p>
-              JSON-файлы проверяются и загружаются при применении. После их
-              изменения примените сценарий снова. Выключенный модуль не меняет
-              трафик; мок-ответы имеют приоритет над обычными правилами. После
-              перезапуска модуль выключен.
+              @app.on_response получает request, response, ctx. Изменяйте
+              response.json, response.text и response.headers. Для запросов
+              доступны request.json, request.text, request.url и
+              request.headers.
+            </p>
+            <p>
+              Файлы загружаются при проверке/применении. Для вычисляемых имён
+              перечислите их в app.files. Скрипты выполняются в отдельном
+              процессе: обработчик до 2 секунд, инициализация до 10 секунд.
+            </p>
+            <p>
+              Python имеет доступ к файлам и системе. Применяйте доверенные
+              скрипты. Проверка тоже выполняет код верхнего уровня. После
+              перезапуска скрипт выключен.
             </p>
           </details>
         </aside>

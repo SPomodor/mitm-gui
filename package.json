@@ -1,6 +1,6 @@
 {
   "name": "chls",
-  "version": "0.7.1",
+  "version": "0.8.5",
   "description": "Desktop HTTP and WireGuard debugging proxy",
   "main": "electron/main.cjs",
   "scripts": {
@@ -28,7 +28,7 @@
     ],
     "extraResources": [
       {
-        "from": "examples",
+        "from": "examples/basic",
         "to": "examples"
       },
       {
@@ -47,6 +47,13 @@
     }
   },
   "dependencies": {
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/search": "^6.7.2",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15",
+    "@lezer/highlight": "^1.2.5",
     "@tanstack/react-virtual": "^3.14.20",
     "lucide-react": "^1.57.0",
     "qrcode.react": "^4.2.0",

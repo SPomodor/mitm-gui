@@ -113,6 +113,11 @@ async function unusedPort() {
   let upstream;
   try {
     const page = await application.firstWindow();
+    async function setScriptSource(text) {
+      await page.getByLabel("Код сценария").press("Control+a");
+      await page.keyboard.insertText(text);
+    }
+
     async function dragSeparator(label, delta, axis = "x") {
       const separator = page.getByRole("separator", {
         name: label,
@@ -582,7 +587,7 @@ async function unusedPort() {
       .getByLabel("Название", { exact: true })
       .fill("Enable feature flag");
     await editor.getByLabel("Что изменить").selectOption("json");
-    await editor.getByLabel("Путь поля через точку").fill("enabled");
+    await editor.getByLabel("Имя поля или точный путь JSON").fill("enabled");
     await editor.getByLabel("Новое значение JSON").fill("true");
     await editor.screenshot({
       path: path.join(output, "08-rule-window.png"),
@@ -950,16 +955,17 @@ async function unusedPort() {
       .getByRole("navigation")
       .getByRole("button", { name: /^Сценарии/ })
       .click();
-    if (
-      !(await page.evaluate(() => window.chls.mockOrderTemplate())).includes(
-        "6_complete_exchange_init.json",
-      )
-    )
-      throw new Error("Bundled order template is missing");
-    await page.getByRole("button", { name: "Демо", exact: true }).click();
-    await page.getByLabel("Домены сценария").fill("api.example.test");
-    await page.getByRole("checkbox", { name: /^Все домены/ }).check();
-    await expect(page.getByLabel("Домены сценария")).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Шаблон 187", exact: true }),
+    ).toHaveCount(0);
+    await setScriptSource(
+      await fs.readFile(path.resolve("tests/fixtures/ui-scenario.py"), "utf8"),
+    );
+    await expect(page.getByLabel("Домены сценария")).toHaveCount(0);
+    await expect(
+      page.getByRole("checkbox", { name: /^Все домены/ }),
+    ).toHaveCount(0);
+    await expect(page.getByLabel("Папка JSON", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Проверить", exact: true }).click();
     await expect(page.getByRole("status")).toContainText("Проверено: 7 этапов");
     await page
@@ -990,7 +996,21 @@ async function unusedPort() {
     );
     if ((await fetchProxy(mockUrl + "/unhandled")).status !== 501)
       throw new Error("Strict mock scope did not block unmatched request");
-    const originalSource = await page.getByLabel("Код сценария").inputValue();
+    const originalSource = await page.evaluate(
+      async () => (await window.chls.api("/mocks")).source,
+    );
+    await setScriptSource(
+      'модуль "Миграция"\nэтап "one":\n GET /driver/migration -> 200 {"ok":true}',
+    );
+    await page
+      .getByRole("button", { name: "Перевести в Python", exact: true })
+      .click();
+    await expect(page.getByLabel("Код сценария")).toContainText(
+      /from chls import Script, Scenario, response/,
+    );
+    if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "completed")
+      throw new Error("Migration unexpectedly replaced the active script");
+    await setScriptSource(originalSource);
     const editorWidth = await page
       .locator(".mock-editor-pane")
       .evaluate((el) => el.getBoundingClientRect().width);
@@ -1002,16 +1022,17 @@ async function unusedPort() {
           .evaluate((el) => Math.round(el.getBoundingClientRect().width)),
       )
       .toBe(Math.round(editorWidth - 40));
-    await expect(page.getByLabel("Код сценария")).toHaveValue(originalSource);
+    await page.getByLabel("Код сценария").press("Control+Home");
+    await expect(page.getByLabel("Код сценария")).toContainText(
+      "from chls import Script, Scenario, response",
+    );
     await page
       .getByRole("separator", {
         name: "Ширина редактора сценария и журнала",
         exact: true,
       })
       .dblclick();
-    await page
-      .getByLabel("Код сценария")
-      .fill(originalSource + "\nневерная команда");
+    await setScriptSource(originalSource + "\nневерная команда");
     await page
       .getByRole("button", { name: "Применить сценарий", exact: true })
       .click();
@@ -1020,20 +1041,15 @@ async function unusedPort() {
     );
     if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "completed")
       throw new Error("Failed apply replaced working mock");
-    await page.getByLabel("Код сценария").fill(originalSource);
+    await setScriptSource(originalSource);
     await page
-      .getByRole("button", { name: "Сбросить этап", exact: true })
+      .getByRole("button", { name: "Сбросить состояние", exact: true })
       .click();
     await expect(
       page.getByRole("button", { name: "Собирается", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
     if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "assembling")
       throw new Error("Mock reset failed");
-    await page.getByLabel("Режим сценария").selectOption("scenario");
-    await expect(page.getByLabel("Режим сценария")).toHaveValue("scenario");
-    await expect(
-      page.getByRole("button", { name: "В магазин", exact: true }),
-    ).toBeDisabled();
     const confirmUrl = `http://127.0.0.1:${originPort}/driver/v1/cargo-pro-api/grocery/v1/order/exchange/confirm`;
     const arriveUrl = `http://127.0.0.1:${originPort}/driver/v1/cargo-pro-api/grocery/v1/order/arrive-at-point`;
     await fetchProxy(confirmUrl, undefined, "POST", {
@@ -1056,11 +1072,8 @@ async function unusedPort() {
     await fetchProxy(confirmUrl, undefined, "POST", {
       "Idempotency-Key": "ui-deliver",
     });
-    await fetchProxy(confirmUrl, undefined, "POST", {
-      "Idempotency-Key": "ui-deliver",
-    });
     if (JSON.parse((await fetchProxy(mockUrl)).text).status !== "returning")
-      throw new Error("Duplicate confirm skipped a stage");
+      throw new Error("Explicit transition did not reach returning stage");
     await fetchProxy(confirmUrl, undefined, "POST", {
       "Idempotency-Key": "ui-return",
     });
@@ -1077,10 +1090,6 @@ async function unusedPort() {
     await expect(
       page.getByRole("button", { name: "Применить сценарий", exact: true }),
     ).toBeInViewport({ ratio: 1 });
-    await page.getByLabel("Режим сценария").selectOption("free");
-    await expect(
-      page.getByRole("button", { name: "В магазин", exact: true }),
-    ).toBeEnabled();
     await page
       .getByRole("navigation")
       .getByRole("button", { name: /^Трафик/ })
@@ -1092,7 +1101,10 @@ async function unusedPort() {
       .getByRole("navigation")
       .getByRole("button", { name: /^Сценарии/ })
       .click();
-    await expect(page.getByLabel("Код сценария")).toHaveValue(originalSource);
+    await page.getByLabel("Код сценария").press("Control+Home");
+    await expect(page.getByLabel("Код сценария")).toContainText(
+      "from chls import Script, Scenario, response",
+    );
     await page
       .getByRole("button", { name: "Выключить сценарий", exact: true })
       .click();
@@ -1101,6 +1113,56 @@ async function unusedPort() {
     ).toBeEnabled();
     if (JSON.parse((await fetchProxy(mockUrl)).text).app !== "CHLS")
       throw new Error("Normal proxy did not resume after disabling mock");
+    await setScriptSource(`from chls import Script, Json, response
+app = Script("Standalone")
+@app.get("/driver/demo/order")
+def order(request, ctx):
+    body = Json({"order": {"start": {"time": 1}}})
+    body.set("time", 99)
+    return response(200, json=body)
+@app.get("/driver/demo/forward")
+def upstream(request, ctx):
+    return None
+@app.get("/driver/demo/stop")
+def stop(request, ctx):
+    ctx.stop()
+    return response(200, json={"stopped": True})
+`);
+    await page
+      .getByRole("button", { name: "Применить сценарий", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Включить сценарий", exact: true })
+      .click();
+    if (JSON.parse((await fetchProxy(mockUrl)).text).order.start.time !== 99)
+      throw new Error("Standalone script or unique JSON selector failed");
+    if (
+      JSON.parse((await fetchProxy(mockUrl.replace("/order", "/forward"))).text)
+        .app !== "CHLS"
+    )
+      throw new Error("Explicit upstream forwarding failed");
+    await expect(page.locator(".mock-log-list")).toContainText("→ сервер GET");
+    if (
+      !JSON.parse((await fetchProxy(mockUrl.replace("/order", "/stop"))).text)
+        .stopped
+    )
+      throw new Error("ctx.stop() lost the current response");
+    await expect(
+      page.getByRole("button", { name: "Включить сценарий", exact: true }),
+    ).toBeEnabled();
+    await expect(page.locator(".mock-log-list")).toContainText(
+      "Скрипт выключен: ctx.stop()",
+    );
+    if (JSON.parse((await fetchProxy(mockUrl)).text).app !== "CHLS")
+      throw new Error("ctx.stop() did not restore ordinary proxy processing");
+    await page
+      .getByRole("button", { name: "Включить сценарий", exact: true })
+      .click();
+    if (JSON.parse((await fetchProxy(mockUrl)).text).order.start.time !== 99)
+      throw new Error("Script could not be enabled after ctx.stop()");
+    await page
+      .getByRole("button", { name: "Выключить сценарий", exact: true })
+      .click();
     await page
       .getByRole("navigation")
       .getByRole("button", { name: /^Правила/ })
@@ -1449,12 +1511,13 @@ async function unusedPort() {
           "rename session",
           ...(!portable ? ["export HAR through native save dialog"] : []),
           "stop",
-          "mock DSL validation and demo",
-          "all-host mock toggle with two domains",
+          "Python script validation and scenario demo",
+          "script hosts and prefix defined in Python; folder is the only settings field",
           "manual mock stages and reset",
-          "scenario mode triggers for arrive and confirm",
-          "duplicate confirm does not skip stages",
-          "switching back to free mode restores manual stage selection",
+          "explicit Python scenario transitions for arrive and confirm",
+          "legacy .chls migration produces a draft without replacing active script",
+          "standalone script without stages and unique nested JSON selector",
+          "ctx.stop sends current response, updates UI, resumes upstream and permits enabling again",
           "strict unmatched request blocking",
           "invalid mock keeps active revision",
           "disabled mock restores normal proxy",
