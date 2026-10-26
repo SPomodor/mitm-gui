@@ -155,10 +155,16 @@ jobs:
       - name: Check tag matches package version
         if: startsWith(github.ref, 'refs/tags/')
         run: node -e "if (process.env.GITHUB_REF_NAME !== 'v' + require('./package.json').version) throw Error('Tag must match package.json version')"
-      - name: Build and test sources
+      - name: Build frontend and check TypeScript
+        env:
+          MITM_GUI_CI_TIMEOUT_MS: "180000"
+        run: node scripts/ci-check.cjs --command npm run build
+      - name: Test backend with bounded diagnostics
+        env:
+          MITM_GUI_CI_TIMEOUT_MS: "180000"
+        run: node scripts/ci-check.cjs scripts/test-backend.cjs -vv --junitxml=build/pytest.xml
+      - name: Test formatting and UI components
         run: |
-          npm run build
-          npm test -- --junitxml=build/pytest.xml
           npm run test:format
           npm run test:ui
       - name: Build and test native engine
