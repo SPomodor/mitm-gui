@@ -77,8 +77,8 @@ The runner must allow Actions. If GitHub disables Actions for the repository, en
 4. Create and push the exact version tag:
 
 ```sh
-git tag v0.9.1
-git push origin v0.9.1
+git tag v0.9.2
+git push origin v0.9.2
 ```
 
 The tag must equal `v` plus `package.json.version`. A tag build repeats all checks, then creates a GitHub Release and uploads Windows EXEs, macOS DMG/ZIP files and per-platform/architecture SHA256SUMS files after both operating systems pass. A normal push only produces Actions artifacts. The workflow explicitly disables electron-builder's implicit publication.

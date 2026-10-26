@@ -90,7 +90,7 @@ Every push and pull request runs [Build and test](.github/workflows/build.yml) o
 
 - Download `mitm-gui-windows-x64` from a successful run's **Artifacts** section.
 - Use **Actions → Build and test → Run workflow** for a manual build.
-- Push a tag matching `package.json`, such as `v0.9.1`, to publish a GitHub Release after all checks pass. The release includes the EXE and SHA-256 checksum.
+- Push a tag matching `package.json`, such as `v0.9.2`, to publish a GitHub Release after all checks pass. The release includes Windows x64/ARM64 EXEs, macOS arm64/x64 DMG/ZIP files and architecture-specific SHA-256 checksums.
 
 The workflow uses the built-in `GITHUB_TOKEN`; no personal access token or signing secret is required for the unsigned Windows build. See [release instructions](CONTRIBUTING.md#releases).
 

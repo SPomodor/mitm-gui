@@ -224,6 +224,18 @@ jobs:
           pattern: mitm-gui-*
           merge-multiple: true
           path: artifacts
+      - name: Verify complete release asset set
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          for arch in x64 arm64; do
+            test -s "artifacts/mitm-gui-$version-win-$arch.exe"
+            test -s "artifacts/SHA256SUMS-$arch.txt"
+            test -s "artifacts/mitm-gui-$version-mac-$arch.dmg"
+            test -s "artifacts/mitm-gui-$version-mac-$arch.zip"
+            test -s "artifacts/SHA256SUMS-mac-$arch.txt"
+          done
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -234,7 +246,7 @@ jobs:
             cat > release-notes.md <<'NOTES'
           ## macOS builds
 
-          Separate arm64 (Apple Silicon) and x64 (Intel) DMG/ZIP builds include a native engine. Each macOS runner executes source, frozen-engine and packaged desktop tests. Without Developer ID credentials these builds are unsigned and not notarized; see docs/macos.md for Gatekeeper and manual proxy/CA setup. Verify the architecture-specific SHA256SUMS file.
+          Separate arm64 (Apple Silicon) and x64 (Intel) DMG/ZIP builds include a native engine. Each macOS runner executes source, frozen-engine and packaged desktop tests. Without Developer ID credentials macOS builds have only an ad-hoc integrity signature and are not notarized. See [macOS installation and Gatekeeper instructions](https://github.com/SPomodor/mitm-gui/blob/main/docs/macos.md) ([Русский](https://github.com/SPomodor/mitm-gui/blob/main/docs/macos.ru.md)). System proxy and CA trust setup remain explicit user actions. Verify the architecture-specific SHA256SUMS file.
 
           ## Windows builds
 
@@ -245,6 +257,7 @@ jobs:
 
           Windows x86/32-bit, ARM32 and Windows 10 ARM are not supported by this release.
           NOTES
-            gh release create "$TAG" --verify-tag --title "mitm gui $TAG" --notes-file release-notes.md --generate-notes
+            gh release create "$TAG" --draft --verify-tag --title "mitm gui $TAG" --notes-file release-notes.md --generate-notes
           fi
           gh release upload "$TAG" artifacts/* --clobber
+          gh release edit "$TAG" --draft=false --latest
