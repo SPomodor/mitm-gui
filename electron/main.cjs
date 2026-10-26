@@ -531,7 +531,13 @@ app.whenReady().then(async () => {
     await backendReady;
     window.webContents.send("backend:events", [{ type: "resync" }]);
   } catch (error) {
-    dialog.showErrorBox(nativeT("mitm gui: движок недоступен"), error.message);
+    // Closing during startup can terminate the backend before its readiness
+    // promise settles. Do not show a startup failure for an app already closed.
+    if (!quitting && window && !window.isDestroyed())
+      dialog.showErrorBox(
+        nativeT("mitm gui: движок недоступен"),
+        error.message,
+      );
   }
   app.on("activate", () => window?.show());
 });

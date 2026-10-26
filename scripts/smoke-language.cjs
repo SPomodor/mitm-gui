@@ -9,6 +9,7 @@ const net = require("node:net");
   const profiles = new Map();
   let application, page;
   const errors = [];
+  const nativeErrors = [];
   async function launch(id, systemLocale) {
     let data = profiles.get(id);
     if (!data) {
@@ -37,6 +38,17 @@ const net = require("node:net");
       },
     });
     page = await application.firstWindow();
+    application.process().stderr.on("data", (chunk) => {
+      if (chunk.toString().includes("MITM_GUI_NATIVE_ERROR:"))
+        nativeErrors.push(chunk.toString());
+    });
+    await application.evaluate(({ dialog }) => {
+      dialog.showErrorBox = (title, message) => {
+        process.stderr.write(
+          "MITM_GUI_NATIVE_ERROR:" + JSON.stringify({ title, message }) + "\n",
+        );
+      };
+    });
     page.setDefaultTimeout(10000);
     page.on("pageerror", (e) => errors.push(e.message));
     await expect(page.locator(".language-control select")).toBeVisible();
@@ -167,6 +179,8 @@ const net = require("node:net");
     await expect(language()).toHaveValue("auto");
     await expect(page.locator("html")).toHaveAttribute("lang", "ru");
     expect(errors).toEqual([]);
+    await finish();
+    expect(nativeErrors).toEqual([]);
     console.log(
       JSON.stringify({
         ok: true,
@@ -179,6 +193,7 @@ const net = require("node:net");
           "open editor search survives language change",
           "native folder dialog",
           "compact English layout",
+          "closing during startup does not show an engine error dialog",
         ],
       }),
     );
