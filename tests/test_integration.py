@@ -25,11 +25,6 @@ def free_port(kind=socket.SOCK_STREAM):
 def engine_command():
     if os.environ.get('CHLS_TEST_ENGINE'):
         return [os.environ['CHLS_TEST_ENGINE']]
-    if os.environ.get('GITHUB_ACTIONS'):
-        # Capture the child stack, including imports, if runner startup stalls.
-        return [sys.executable, '-c',
-                "import faulthandler, runpy; faulthandler.dump_traceback_later(5, repeat=True); "
-                "runpy.run_module('backend', run_name='__main__')"]
     return [sys.executable, '-m', 'backend']
 
 

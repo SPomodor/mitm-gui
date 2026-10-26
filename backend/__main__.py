@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import re
-import socket
 import time
 from typing import Literal
 from contextlib import asynccontextmanager
@@ -19,6 +18,7 @@ from mitmproxy import http, options
 from mitmproxy.tools.dump import DumpMaster
 from pydantic import BaseModel, Field, field_validator
 
+from .network import addresses
 from .rules import Rule, apply_rules
 from .store import Store
 from .har import export_har
@@ -134,13 +134,6 @@ class Engine:
                 await asyncio.wait_for(asyncio.gather(*(server.wait_closed() for server in wireguard_servers)), timeout=3)
         self.publish({'type': 'status'})
 
-
-def addresses():
-    result = {'127.0.0.1'}
-    with contextlib.suppress(OSError):
-        for address in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-            result.add(address[4][0])
-    return sorted(result, key=lambda s: (s.startswith('127.'), s))
 
 
 def snapshot(engine, flow, message, side):
