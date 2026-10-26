@@ -67,9 +67,9 @@ jobs:
       - name: Package desktop app
         run: npx electron-builder --win --dir --publish never
       - name: Smoke test packaged app
-        run: node scripts/smoke-ui.cjs --packaged
+        run: node scripts/ci-check.cjs scripts/smoke-ui.cjs --packaged
       - name: Smoke test language switching
-        run: npm run test:language
+        run: node scripts/ci-check.cjs scripts/smoke-language.cjs
       - name: Build portable EXE
         run: npx electron-builder --win portable --prepackaged release/win-unpacked --publish never
       - name: Write checksum
