@@ -1,5 +1,12 @@
 import { t, useLocale } from "./i18n";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ArrowDown, ArrowUp, Search, X } from "lucide-react";
 import VirtualCode from "./VirtualCode";
 import { formatBody } from "./formatBody";
@@ -38,13 +45,19 @@ export default memo(function SearchBody({
     return result;
   }, [text, query]);
   const index = matches.length ? current % matches.length : 0;
+  // Focus after React mounts the input, even when rendering takes more than a frame.
+  useLayoutEffect(() => {
+    if (open) {
+      input.current?.focus();
+      input.current?.select();
+    }
+  }, [open]);
   useEffect(() => {
     const find = () => {
       setOpen(true);
-      requestAnimationFrame(() => {
-        input.current?.focus();
-        input.current?.select();
-      });
+      // An already-open search does not trigger the mount effect again.
+      input.current?.focus();
+      input.current?.select();
     };
     window.addEventListener("chls-find-body", find);
     return () => window.removeEventListener("chls-find-body", find);
@@ -114,10 +127,7 @@ export default memo(function SearchBody({
       ) : (
         <button
           className="body-find-button text-button"
-          onClick={() => {
-            setOpen(true);
-            requestAnimationFrame(() => input.current?.focus());
-          }}
+          onClick={() => setOpen(true)}
         >
           <Search size={12} />
           {t(" Найти · Ctrl+F")}
