@@ -47,7 +47,7 @@
       "target": [
         "portable"
       ],
-      "signAndEditExecutable": false
+      "signExecutable": false
     },
     "portable": {
       "artifactName": "mitm-gui-${version}-win-x64.exe"
@@ -60,7 +60,8 @@
       "category": "public.app-category.developer-tools",
       "identity": null,
       "artifactName": "mitm-gui-${version}-mac-${arch}.${ext}"
-    }
+    },
+    "copyright": "Copyright © 2026 SPomodor"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

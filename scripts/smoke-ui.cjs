@@ -114,6 +114,8 @@ async function unusedPort() {
   let upstream;
   try {
     const page = await application.firstWindow();
+    // Hosted Windows desktops can be shorter than the requested native window.
+    await page.setViewportSize({ width: 1440, height: 940 });
     async function setScriptSource(text) {
       await page.getByLabel("Код сценария").press("Control+a");
       await page.keyboard.insertText(text);
@@ -179,6 +181,18 @@ async function unusedPort() {
     const sessionsHeight = await page
       .locator(".sidebar-sessions")
       .evaluate((el) => el.getBoundingClientRect().height);
+    const sessionsMaximum = Number(
+      await page
+        .getByRole("separator", {
+          name: "Высота разделов сессий и хостов",
+          exact: true,
+        })
+        .getAttribute("aria-valuemax"),
+    );
+    const sessionsTarget = Math.min(
+      Math.round(sessionsHeight + 24),
+      sessionsMaximum,
+    );
     await dragSeparator("Высота разделов сессий и хостов", 24, "y");
     await expect
       .poll(() =>
@@ -186,7 +200,7 @@ async function unusedPort() {
           .locator(".sidebar-sessions")
           .evaluate((el) => Math.round(el.getBoundingClientRect().height)),
       )
-      .toBe(Math.round(sessionsHeight + 24));
+      .toBe(sessionsTarget);
     await page.reload();
     await expect(
       page.getByRole("button", { name: "Остановить", exact: true }),
@@ -204,7 +218,7 @@ async function unusedPort() {
           .locator(".sidebar-sessions")
           .evaluate((el) => Math.round(el.getBoundingClientRect().height)),
       )
-      .toBe(Math.round(sessionsHeight + 24));
+      .toBe(sessionsTarget);
     await page
       .getByRole("separator", { name: "Ширина боковой панели", exact: true })
       .dblclick();
@@ -231,7 +245,9 @@ async function unusedPort() {
     await expect(
       page.getByRole("button", { name: "SSL вкл", exact: true }).locator("svg"),
     ).toHaveCount(1);
-    await page.getByLabel("Тема оформления", { exact: true }).selectOption("dark");
+    await page
+      .getByLabel("Тема оформления", { exact: true })
+      .selectOption("dark");
     await page.screenshot({
       animations: "disabled",
       path: path.join(output, "01-traffic.png"),
@@ -902,7 +918,9 @@ async function unusedPort() {
       animations: "disabled",
       path: path.join(output, "05-light-compact.png"),
     });
-    await page.getByLabel("Тема оформления", { exact: true }).selectOption("dark");
+    await page
+      .getByLabel("Тема оформления", { exact: true })
+      .selectOption("dark");
     await page
       .getByRole("button", { name: /^Переименовать:/ })
       .first()
