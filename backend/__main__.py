@@ -12,7 +12,7 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from starlette.background import BackgroundTask
 from mitmproxy import http, options
 from mitmproxy.tools.dump import DumpMaster
@@ -22,6 +22,7 @@ from .network import addresses
 from .rules import Rule, apply_rules
 from .store import Store
 from .har import export_har
+from .bodies import body_document
 from .hosts import display_url, flow_host
 from .mocks import MockError
 from .scripts import ScriptModule, ScriptRunner
@@ -31,7 +32,7 @@ from .records import begin_recording, can_record
 from .ssl_policy import normalize_hosts, should_decrypt
 
 MAX_BODY = 8 * 1024 * 1024
-MAX_PREVIEW = 256 * 1024
+MAX_PREVIEW = 1024 * 1024
 EXPORT_LOCK = asyncio.Lock()
 TOKEN = os.environ.get('CHLS_TOKEN', '')
 ROOT = Path(os.environ.get('CHLS_DATA', 'runtime')).resolve()
@@ -523,7 +524,7 @@ async def session_export(session_id: str, format: Literal['http', 'charles'] = '
         if snapshot is None:
             raise HTTPException(404, 'Сессия не найдена')
         file = await asyncio.to_thread(export_har, ROOT, *snapshot, include_connections=format == 'charles')
-    return FileResponse(file, media_type='application/json', filename='session.har',
+    return FileResponse(file, media_type='application/json; charset=utf-8', filename='session.har',
                         background=BackgroundTask(file.unlink, missing_ok=True))
 
 
@@ -556,26 +557,48 @@ async def detail(flow_id: str):
         if not file or not file.exists():
             message.update(text='', truncated=False)
             continue
-        data = file.read_bytes()
-        # mitmproxy decodes gzip/br using the original headers.
         try:
-            msg = http.Response.make(200, b'')
-            msg.headers = http.Headers((k.encode('latin1'), v.encode('latin1')) for k, v in message['headers'])
-            msg.raw_content = data
-            decoded = msg.content
-            message['text'] = decoded[:MAX_PREVIEW].decode('utf-8', errors='replace')
-            message['truncated'] = len(decoded) > MAX_PREVIEW
+            document = body_document(message, ROOT, side)
+            message['download_name'] = document['filename']
+            text = document['text']
+            if text is None:
+                raise ValueError('Binary body')
+            encoded = text.encode('utf-8')
+            message['text'] = encoded[:MAX_PREVIEW].decode('utf-8', errors='ignore')
+            message['truncated'] = len(encoded) > MAX_PREVIEW
+            message['textual'] = True
         except Exception:
-            message.update(text='Бинарное или неподдерживаемое содержимое. Сохраните тело в файл.', truncated=False)
+            message.update(text='Бинарное или неподдерживаемое содержимое. Сохраните тело в файл.', truncated=False, textual=False)
     return item
 
 
 @app.get('/flows/{flow_id}/body/{side}')
-async def body(flow_id: str, side: str):
+async def body(flow_id: str, side: str, raw: bool = False):
     item = engine.store.detail(flow_id)
     if not item or side not in ('request', 'response', 'original_request', 'original_response') or not item.get(side) or not item[side]['body_file']:
         raise HTTPException(404, 'Тело не сохранено')
-    return FileResponse(ROOT / 'bodies' / item[side]['body_file'], filename=f'{side}.bin')
+    if raw:
+        return FileResponse(ROOT / 'bodies' / item[side]['body_file'], filename=f'{side}.bin')
+    try:
+        document = body_document(item[side], ROOT, side)
+    except (ValueError, OSError) as error:
+        raise HTTPException(422, 'Не удалось декодировать тело') from error
+    return Response(document['content'], media_type=document['media_type'],
+                    headers={'Content-Disposition': f'attachment; filename="{document["filename"]}"'})
+
+
+@app.get('/flows/{flow_id}/body/{side}/text')
+async def full_body_text(flow_id: str, side: str):
+    item = engine.store.detail(flow_id)
+    if not item or side not in ('request', 'response', 'original_request', 'original_response') or not item.get(side) or not item[side]['body_file']:
+        raise HTTPException(404, 'Тело не сохранено')
+    try:
+        document = body_document(item[side], ROOT, side)
+    except (ValueError, OSError) as error:
+        raise HTTPException(422, 'Не удалось декодировать тело') from error
+    if document['text'] is None:
+        raise HTTPException(422, 'Тело содержит бинарные данные')
+    return {'text': document['text']}
 
 
 @app.websocket('/events')

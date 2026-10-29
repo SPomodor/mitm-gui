@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld("chls", {
   deleteScript: (id) => ipcRenderer.invoke("script-library-remove", id),
   importMockScript: () => ipcRenderer.invoke("import-mock-script"),
   saveText: (name, text) => ipcRenderer.invoke("save-text", name, text),
+  copyText: (text) => ipcRenderer.invoke("copy-text", text),
   download: (route, name) => ipcRenderer.invoke("download", route, name),
   exportSession: (id, name, format = "http") =>
     ipcRenderer.invoke("export-session", id, name, format),

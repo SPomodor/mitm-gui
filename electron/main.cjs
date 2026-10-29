@@ -5,6 +5,7 @@ const {
   dialog,
   Menu,
   shell,
+  clipboard,
 } = require("electron");
 const { spawn } = require("node:child_process");
 const { randomBytes } = require("node:crypto");
@@ -41,7 +42,7 @@ if (process.env.CHLS_USER_DATA) {
   }
 }
 const allowed =
-  /^\/(status|recording|mocks(?:\/(?:validate|control|convert))?|capture\/(start|stop|ssl)|wireguard|certificate|rules(?:\/[a-zA-Z0-9-]+)?|sessions(?:\/[a-zA-Z0-9-]+(?:\/export)?)?|flows(?:\/[a-zA-Z0-9-]+(?:\/body\/(?:original_)?(?:request|response))?)?)(?:\?.*)?$/;
+  /^\/(status|recording|mocks(?:\/(?:validate|control|convert))?|capture\/(start|stop|ssl)|wireguard|certificate|rules(?:\/[a-zA-Z0-9-]+)?|sessions(?:\/[a-zA-Z0-9-]+(?:\/export)?)?|flows(?:\/[a-zA-Z0-9-]+(?:\/body\/(?:original_)?(?:request|response)(?:\/text)?)?)?)(?:\?.*)?$/;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let languagePreference;
 function language() {
@@ -390,6 +391,11 @@ ipcMain.handle("import-mock-script", async (event) => {
     source: await fs.promises.readFile(result.filePaths[0], "utf8"),
     folder: path.dirname(result.filePaths[0]),
   };
+});
+ipcMain.handle("copy-text", (event, text) => {
+  trusted(event);
+  if (typeof text !== "string") throw new Error("Invalid clipboard text");
+  return clipboard.writeText(text);
 });
 ipcMain.handle("save-text", async (event, name, text) => {
   trusted(event);

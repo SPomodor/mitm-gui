@@ -104,7 +104,7 @@ Search by URL, method, status or client address. Filters include all, modified a
 
 Select a row to inspect request and response headers, body and applied rules. Switch between the original and resulting message. Pretty formats JSON previews. Body search works across the whole available preview, including content outside the visible viewport; Enter/Shift+Enter navigates matches and Escape closes it.
 
-The body preview is limited to **256 KB**. Download saves all available original body bytes. Buffered bodies up to **8 MB** can be modified; larger streamed bodies are marked unavailable for body Rewrite. The traffic list displays at most the latest **10,000** records, while export includes the full stored session.
+The body preview is limited to **1 MiB**. Copy fetches the complete saved, decoded text. Download saves the complete decoded body; JSON is saved as a UTF-8 `.json` file. Raw wire bytes remain available through the body API with `?raw=true`. Buffered bodies up to **8 MB** can be modified; larger streamed bodies are marked unavailable for body Rewrite. The traffic list displays at most the latest **10,000** records, while export includes the full stored session.
 
 ## Rules
 

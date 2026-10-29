@@ -1690,7 +1690,7 @@ function Inspector({
   }, []);
   async function copy(text: string) {
     try {
-      await navigator.clipboard.writeText(text);
+      await window.chls.copyText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch (e) {
@@ -1848,28 +1848,41 @@ function Inspector({
               )}
               <IconButton
                 title={t("Копировать")}
-                disabled={!message}
-                onClick={() =>
-                  copy(
-                    tab === "headers"
-                      ? message!.headers
-                          .map(([k, v]) => `${k}: ${v}`)
-                          .join("\n")
-                      : message!.text,
-                  )
+                disabled={
+                  !message ||
+                  (tab === "body" &&
+                    (!message.body_file || message.textual === false))
                 }
+                onClick={async () => {
+                  if (!message) return;
+                  try {
+                    const text =
+                      tab === "headers"
+                        ? message.headers
+                            .map(([k, v]) => `${k}: ${v}`)
+                            .join("\n")
+                        : (
+                            await api<{ text: string }>(
+                              `/flows/${detail.id}/body/${key}/text`,
+                            )
+                          ).text;
+                    await copy(text);
+                  } catch (error) {
+                    useApp.getState().setError((error as Error).message);
+                  }
+                }}
               >
                 {copied ? <Check size={13} /> : <Copy size={13} />}
               </IconButton>
               {tab === "body" && (
                 <IconButton
-                  title={t("Сохранить исходные байты тела")}
+                  title={t("Сохранить полное тело")}
                   disabled={!message?.body_file}
                   onClick={() =>
                     window.chls
                       .download(
                         `/flows/${detail.id}/body/${key}`,
-                        `${side}.bin`,
+                        message?.download_name || `${side}.bin`,
                       )
                       .catch((e) => useApp.getState().setError(e.message))
                   }
@@ -1905,7 +1918,9 @@ function Inspector({
               )}
               {message.truncated && (
                 <div className="notice">
-                  {t("Показаны первые 256 KB. Полное тело можно сохранить.")}
+                  {t(
+                    "Показан первый 1 МБ. Копирование и скачивание сохраняют полное тело.",
+                  )}
                 </div>
               )}
               <SearchBody

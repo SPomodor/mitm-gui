@@ -13,6 +13,7 @@ from mitmproxy import http
 from .hosts import readable_record
 from .records import normalize_record
 from .charles_har import tunnel_entry
+from .bodies import body_text
 
 
 def date(timestamp):
@@ -40,13 +41,9 @@ def har_message(message, root, url='', request=False):
     result = {'httpVersion': message.get('http_version', 'HTTP/1.1'),
               'headers': [{'name': k, 'value': v} for k, v in headers],
               'cookies': [], 'headersSize': -1, 'bodySize': len(raw)}
-    try:
-        text = decoded.decode('utf-8')
-        # Binary UTF-8 data, including NUL bytes, also needs base64.
-        if any(ord(c) < 32 and c not in '\t\r\n' for c in text):
-            raise UnicodeError()
-        encoding = None
-    except UnicodeError:
+    text = body_text(decoded, headers)
+    encoding = None
+    if text is None:
         text = base64.b64encode(decoded).decode('ascii')
         encoding = 'base64'
     if request:
@@ -79,7 +76,7 @@ def export_har(root: Path, session, rows, *, include_connections=False):
                       '_chlsSession': session, 'pages': []}
             if include_connections:
                 header['comment'] = 'Charles compatibility export: CONNECT/CONNECT-UDP entries are synthetic connection summaries, not captured HTTP requests.'
-            handle.write(json.dumps(header, ensure_ascii=False)[:-1] + ',"entries":[')
+            handle.write(json.dumps(header, ensure_ascii=True)[:-1] + ',"entries":[')
             index = 0
             for row in rows:
                 detail = readable_record(normalize_record(json.loads(row)))
@@ -88,7 +85,7 @@ def export_har(root: Path, session, rows, *, include_connections=False):
                         continue
                     if index:
                         handle.write(',')
-                    json.dump(tunnel_entry(detail), handle, ensure_ascii=False)
+                    json.dump(tunnel_entry(detail), handle, ensure_ascii=True)
                     index += 1
                     continue
                 entry = {'startedDateTime': date(detail['started']), 'time': detail.get('duration') or 0,
@@ -101,7 +98,7 @@ def export_har(root: Path, session, rows, *, include_connections=False):
                         entry['_chls'][side] = har_message(detail[side], root, '', side.endswith('request'))
                 if index:
                     handle.write(',')
-                json.dump(entry, handle, ensure_ascii=False)
+                json.dump(entry, handle, ensure_ascii=True)
                 index += 1
             handle.write(']}}')
         return file

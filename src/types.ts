@@ -97,6 +97,8 @@ export interface Message {
   text: string;
   truncated: boolean;
   body_file: string | null;
+  download_name?: string;
+  textual?: boolean;
 }
 export interface HttpDetail extends HttpFlow {
   request: Message | null;
@@ -185,6 +187,7 @@ declare global {
         folder: string;
       } | null>;
       saveText: (name: string, text: string) => Promise<boolean>;
+      copyText: (text: string) => Promise<void>;
       download: (route: string, name: string) => Promise<boolean>;
       exportSession: (
         id: string,

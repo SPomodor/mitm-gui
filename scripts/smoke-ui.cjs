@@ -303,6 +303,19 @@ async function unusedPort() {
     await page.getByRole("button", { name: "Закрыть", exact: true }).click();
     upstream = http.createServer((req, res) => {
       res.setHeader("Content-Type", "application/json");
+      if (req.url.startsWith("/unicode-full")) {
+        res.setHeader("Content-Encoding", "gzip");
+        res.end(
+          gzipSync(
+            JSON.stringify({
+              message: "Сообщим, когда всё починят",
+              padding: "я".repeat(600000),
+              tail: "КОНЕЦ",
+            }),
+          ),
+        );
+        return;
+      }
       if (req.url.startsWith("/large-")) {
         const complete = JSON.stringify({
           items: Array.from({ length: 1800 }, (_, i) => ({
@@ -314,9 +327,9 @@ async function unusedPort() {
           tail: "TAIL-SENTINEL",
         });
         const content = req.url.startsWith("/large-truncated")
-          ? complete.repeat(4)
+          ? complete.repeat(12)
           : req.url.startsWith("/large-string")
-            ? JSON.stringify({ value: "x".repeat(300000) })
+            ? JSON.stringify({ value: "x".repeat(1200000) })
             : complete;
         if (req.url.startsWith("/large-truncated")) {
           res.setHeader("Content-Encoding", "gzip");
@@ -730,6 +743,68 @@ async function unusedPort() {
     await page.setViewportSize({ width: 1440, height: 940 });
     await trafficHandle.dblclick();
     // Large-body checks are performed on real saved, decoded proxy traffic.
+    if (!portable) {
+      await fetchProxy(`http://127.0.0.1:${originPort}/unicode-full`);
+      await expect(page.locator(".flow-row").first()).toContainText(
+        "/unicode-full",
+      );
+      await page.locator(".flow-row").first().click();
+      await expect(page.locator(".notice")).toContainText("1 МБ");
+      await page
+        .locator(".body-tools")
+        .getByRole("button", { name: "Копировать", exact: true })
+        .click();
+      await expect
+        .poll(async () =>
+          application.evaluate(async ({ clipboard }) => {
+            try {
+              const body = JSON.parse(await clipboard.readText());
+              return {
+                tail: body.tail,
+                length: body.padding?.length,
+                message: body.message,
+              };
+            } catch {
+              return null;
+            }
+          }),
+        )
+        .toEqual({
+          tail: "КОНЕЦ",
+          length: 600000,
+          message: "Сообщим, когда всё починят",
+        });
+      const copiedBody = await application.evaluate(({ clipboard }) =>
+        clipboard.readText(),
+      );
+      const copiedJson = JSON.parse(copiedBody);
+      if (
+        copiedJson.tail !== "КОНЕЦ" ||
+        copiedJson.padding.length !== 600000 ||
+        copiedJson.message !== "Сообщим, когда всё починят"
+      )
+        throw new Error("Clipboard did not contain the complete Unicode JSON");
+      const downloadedBody = path.join(output, "full-response.json");
+      await application.evaluate(({ dialog }, filePath) => {
+        dialog.showSaveDialog = async (_owner, options) => {
+          if (!options.defaultPath.endsWith(".json"))
+            throw new Error("JSON download has the wrong extension");
+          return { canceled: false, filePath };
+        };
+      }, downloadedBody);
+      await page
+        .getByRole("button", { name: "Сохранить полное тело", exact: true })
+        .click();
+      await expect
+        .poll(async () => {
+          try {
+            return await fs.readFile(downloadedBody, "utf8");
+          } catch {
+            return "";
+          }
+        })
+        .toBe(copiedBody);
+    }
     if (process.env.CHLS_SMOKE_LARGE_BODY === "1") {
       for (const endpoint of [
         "/large-json",
@@ -757,7 +832,7 @@ async function unusedPort() {
           await expect(page.locator(".virtual-code")).toContainText(
             '"items": [',
           );
-          await expect(page.locator(".notice")).toContainText("256 KB");
+          await expect(page.locator(".notice")).toContainText("1 МБ");
           await expect(
             page.locator(".virtual-code .line-number").nth(1),
           ).toHaveText("2");
@@ -830,13 +905,13 @@ async function unusedPort() {
             .getByLabel("Найти в теле", { exact: true })
             .fill("x".repeat(200));
           await expect(page.locator(".body-search [role=status]")).toHaveText(
-            "1/1310",
+            "1/5242",
           );
           await page
             .getByLabel("Найти в теле", { exact: true })
             .press("Shift+Enter");
           await expect(page.locator(".body-search [role=status]")).toHaveText(
-            "1310/1310",
+            "5242/5242",
           );
           await expect(
             page.locator("mark[data-current=true]").first(),
@@ -872,6 +947,8 @@ async function unusedPort() {
         JSON.stringify(bodyPerformance, null, 2),
       );
     }
+    await fetchProxy(url);
+    await expect(page.locator(".flow-row").first()).toContainText("/api/config");
     await expect(page.locator(".flow-row").first()).toContainText("debug=yes");
     await page.locator(".flow-row").first().click({ button: "right" });
     editor = await openEditor(() =>
