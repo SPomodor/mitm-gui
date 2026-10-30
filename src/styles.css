@@ -1446,6 +1446,7 @@ button .spin {
   overflow: auto;
 }
 .rules-toolbar {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1453,7 +1454,7 @@ button .spin {
   border-bottom: 1px solid var(--line);
 }
 .rule-table {
-  flex: 1;
+  flex: 1 0 auto;
   min-height: 280px;
 }
 .rule-table-head,
@@ -1551,6 +1552,7 @@ button .spin {
   transform: translateX(12px);
 }
 .rules-note {
+  flex-shrink: 0;
   display: flex;
   gap: 9px;
   padding: 18px 25px;

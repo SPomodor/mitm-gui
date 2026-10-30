@@ -948,7 +948,9 @@ async function unusedPort() {
       );
     }
     await fetchProxy(url);
-    await expect(page.locator(".flow-row").first()).toContainText("/api/config");
+    await expect(page.locator(".flow-row").first()).toContainText(
+      "/api/config",
+    );
     await expect(page.locator(".flow-row").first()).toContainText("debug=yes");
     await page.locator(".flow-row").first().click({ button: "right" });
     editor = await openEditor(() =>
@@ -1024,6 +1026,67 @@ async function unusedPort() {
     await expect(
       page.locator(".rule-main").filter({ hasText: "Saved from editor two" }),
     ).toHaveCount(1);
+    await expect(page.locator(".rule-row")).toHaveCount(4);
+    // Long rule lists must occupy their full height above the explanatory footer.
+    const savedRules = await page.evaluate(() => window.chls.api("/rules"));
+    const scrollingRules = Array.from({ length: 60 }, (_, index) => ({
+      id: `scroll-${index}`,
+      name: `Scroll rule ${index + 1}`,
+      kind: "rewrite",
+      enabled: true,
+      phase: "response",
+      host: "scroll.example.test",
+      path: "/",
+      action: "header",
+      key: "X-Scroll-Test",
+      value: "yes",
+    }));
+    await page.setViewportSize({ width: 1024, height: 681 });
+    try {
+      await page.evaluate(
+        (rules) => window.chls.api("/rules", "PUT", rules),
+        [...savedRules, ...scrollingRules],
+      );
+      await expect(page.locator(".rule-row")).toHaveCount(64);
+      await page.locator(".rules-page").evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      const lastRow = page.locator(".rule-row").last();
+      await expect(lastRow).toBeInViewport();
+      const bounds = await page.evaluate(() => ({
+        row: document
+          .querySelector(".rule-row:last-child")
+          .getBoundingClientRect().bottom,
+        note: document.querySelector(".rules-note").getBoundingClientRect().top,
+      }));
+      if (bounds.row > bounds.note + 1)
+        throw new Error("Rules footer overlaps the last rule");
+      await lastRow.getByRole("switch").click();
+      await expect(lastRow.getByRole("switch")).toHaveAttribute(
+        "aria-checked",
+        "false",
+      );
+      const lastEditor = await openEditor(() =>
+        lastRow.locator(".rule-main").click(),
+      );
+      await expect(
+        lastEditor.getByLabel("Название", { exact: true }),
+      ).toHaveValue("Scroll rule 60");
+      await Promise.all([
+        lastEditor.waitForEvent("close"),
+        lastEditor.getByRole("button", { name: "Отмена", exact: true }).click(),
+      ]);
+      await page.screenshot({
+        animations: "disabled",
+        path: path.join(output, "20-rules-scroll.png"),
+      });
+    } finally {
+      await page.evaluate(
+        (rules) => window.chls.api("/rules", "PUT", rules),
+        savedRules,
+      );
+      await page.setViewportSize({ width: 1440, height: 940 });
+    }
     await expect(page.locator(".rule-row")).toHaveCount(4);
     await page.getByLabel("Тема оформления").selectOption("light");
     if (portable) await page.setViewportSize({ width: 1024, height: 681 });
